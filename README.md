@@ -34,20 +34,60 @@
 - **外來 forceload 保護**:接手時就已經是 forceloaded 的區塊(玩家 `/forceload` 或其他插件設的)
   只記帳、不接管,也不會被我們解除。
 
-## 速度上限(重要)
+## 速度上限與實測數據
 
-反應式掃描先天追不上珍珠:珍珠速度可能高達每 tick 數百個區塊,而區塊載入本身就比珍珠慢。
-預期行為是**斷續前進**:珍珠衝進未載入區塊 → 卡住 → 下一 tick 掃到 → 補載入 → 繼續飛。
+反應式掃描先天追不上珍珠。**以下數字全部來自實機**(Paper 26.1.2 build 74,4 核心,
+地獄 y=200,`Motion` 用 Bukkit API 設定):
 
-本插件的優化是讀珍珠的 Motion 向量(`Entity#getVelocity()`),沿著它下一 tick 的**行進路線**
-(每 8 格取樣一次,保證不跳過區塊)預先鋪路,而不是只鋪它現在站的那一格:
+### 珍珠在高速下的真實行為
 
-- 速度在 `predict.max-chunks-per-pearl` 涵蓋得了的範圍內 → 幾乎不再卡頓。
-- 速度極高(每 tick 數百區塊)→ 一 tick 要載入上萬個區塊,任何伺服器都撐不住,
-  因此有上限;超過的部分仍會退化成「卡住 → 補載入 → 續飛」。這是物理極限,不是實作偷懶。
+```
+T1  x=     0.5  dx=      0.0  vx=1750.000  chunk=0,0    forced=true
+T2  x=  1733.0  dx=   1732.5  vx=1732.500  chunk=108,0   ← 一 tick 穿過 108 個未生成區塊
+T3~T6         dx=0(凍結,vx 一格不差地保留)
+T7  x=  3448.2  dx=   1715.2  vx=1715.175  chunk=215,0
+```
 
-彈道模型只保留水平阻力 0.99(重力只影響 y,不影響 chunk X/Z),不模擬碰撞與水中阻力;
-猜錯頂多多鋪/少鋪幾個區塊,下一 tick 的差集會自動修正。
+1. **沒有速度上限、沒有 Motion clamp**:珍珠一個 tick 真的位移 1732.5 格,穿過上百個
+   未載入區塊,沒有碰撞、動量完整保留。
+2. **沿途區塊不需要載入**:珍珠只需要「停下來的那一格」是 31 級 entity ticking。
+3. **drag 只在被 tick 時作用一次**(1750 → 1732.5 → 1715.175,每次 ×0.99),
+   凍結多久都不消耗動量 → **卡頓只影響飛多久,不影響飛到哪**。
+4. 對照組:5 格/tick 的珍珠飛出 forceload 區、進到 32 級 lazy 區塊後立刻凍住 20 tick,
+   `vx=4.803` 完全不變——主世界的珍珠炮蓄力機制在實機重現。
+
+### 真正的瓶頸是「區塊生成」,不是 ticket
+
+同一發 1750 格/tick 的珍珠,差別只在落點區塊有沒有預先生成過:
+
+| 落點區塊狀態 | 該 tick 耗時 | 每次跳躍間隔 |
+|---|---|---|
+| 已生成(從硬碟讀) | 177–350 ms | ~10 tick |
+| 全新地形(現場生成) | **5.5–8.9 秒** | ~30–35 tick |
+
+裝不裝這個插件都一樣(控制組實測:無插件 10,139 格/50 秒 TPS 4.0;有插件 8,491 格/41 秒
+TPS 4.7)。**所以長程珍珠炮的第一要務是先把走廊 pre-generate**(Chunky 之類),
+不是調插件參數。
+
+### 兩種鋪路策略
+
+- `corridor`:沿路線整條鋪,低速時沿途碰撞判定才正常。成本與速度成正比
+  (1750 格/tick 要 327 區塊/tick,不可行)。
+- `landing`:只鋪未來每個 tick 的**落點**,成本 = `ticks × (2r+1)²`,**與速度無關**。
+- `auto`(預設):走廊塞不進 `max-chunks-per-pearl` 時自動切成 `landing`。
+
+### forceload 必須非同步(這是實測抓到的 bug)
+
+反編譯 Paper 伺服器 jar 確認:
+
+```
+CraftWorld.setChunkForceLoaded → ServerLevel.setChunkForced →
+    invokevirtual getChunk:(II)Lnet/minecraft/world/level/chunk/LevelChunk;
+```
+
+`setChunkForceLoaded(x, z, true)` **內部會在主執行緒同步 getChunk**,對沒生成過的遠方區塊
+下 forceload 等於在主執行緒跑地形生成。插件因此改成:先 `getChunkAtAsync` 把區塊叫起來
+(生成跑在 chunk worker),回到主執行緒後才掛 forceload。
 
 ## config.yml
 
@@ -59,7 +99,8 @@ debug: false         # 主控台輸出追蹤訊息
 
 predict:
   enabled: true            # 讀 Motion 向量預先鋪路
-  ticks: 1                 # 往前預測幾 tick
+  mode: auto               # auto / corridor / landing,見上面「兩種鋪路策略」
+  ticks: 1                 # 往前預測幾 tick(建議 >= 你伺服器的區塊載入延遲)
   max-chunks-per-pearl: 256 # 每顆珍珠的區塊數上限(安全閥)
 
 recover-on-enable: true    # 啟動時清掉上一輪當機殘留的 forceload

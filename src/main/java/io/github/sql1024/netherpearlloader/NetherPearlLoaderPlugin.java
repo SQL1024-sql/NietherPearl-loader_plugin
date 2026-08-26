@@ -121,10 +121,10 @@ public final class NetherPearlLoaderPlugin extends JavaPlugin {
     private String describe() {
         return String.format(Locale.ROOT,
                 "設定:radius=%d (%dx%d,每顆珍珠 %d 區塊)、interval-ticks=%d、nether-only=%s、debug=%s、"
-                        + "predict=%s (ticks=%d, cap=%d)",
+                        + "predict=%s (mode=%s, ticks=%d, cap=%d)",
                 this.config.radius(), 2 * this.config.radius() + 1, 2 * this.config.radius() + 1,
                 this.config.chunksPerPearlNoPredict(), this.config.intervalTicks(),
                 this.config.netherOnly(), this.config.debug(),
-                this.config.predictEnabled(), this.config.predictTicks(), this.config.maxChunksPerPearl());
+                this.config.predictEnabled(), this.config.predictMode(), this.config.predictTicks(), this.config.maxChunksPerPearl());
     }
 }

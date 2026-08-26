@@ -128,13 +128,14 @@ final class ForceLoadManager {
             final WorldLedger ledger = entry.getValue();
             if (world != null) {
                 for (final long key : ledger.refCounts.keySet()) {
-                    if (!ledger.foreign.contains(key)) {
+                    if (!ledger.foreign.contains(key) && !ledger.pending.contains(key)) {
                         world.setChunkForceLoaded(ChunkKey.x(key), ChunkKey.z(key), false);
                     }
                 }
             }
             ledger.refCounts.clear();
             ledger.foreign.clear();
+            ledger.pending.clear();
         }
         this.ledgers.clear();
         this.journalDirty = false;
@@ -198,7 +199,7 @@ final class ForceLoadManager {
     int ownedChunks() {
         int total = 0;
         for (final WorldLedger ledger : this.ledgers.values()) {
-            total += ledger.refCounts.size() - ledger.foreign.size();
+            total += ledger.refCounts.size() - ledger.foreign.size() - ledger.pending.size();
         }
         return total;
     }
@@ -211,12 +212,51 @@ final class ForceLoadManager {
         if (count != 1) {
             return; // 已經有別的珍珠佔著,不用再設一次
         }
-        if (world.isChunkForceLoaded(ChunkKey.x(key), ChunkKey.z(key))) {
+        final int chunkX = ChunkKey.x(key);
+        final int chunkZ = ChunkKey.z(key);
+        if (world.isChunkForceLoaded(chunkX, chunkZ)) {
             // 不是我們設的 forceload(玩家 /forceload 或其他插件),只記帳、不接管
             ledger.foreign.add(key);
             return;
         }
-        world.setChunkForceLoaded(ChunkKey.x(key), ChunkKey.z(key), true);
+        if (world.isChunkLoaded(chunkX, chunkZ)) {
+            // 已經載入的區塊:setChunkForced 內部那次 getChunk 直接命中快取,不會卡
+            world.setChunkForceLoaded(chunkX, chunkZ, true);
+            return;
+        }
+        //
+        // ★ 這裡是這個插件最重要的一行。
+        //
+        // CraftWorld.setChunkForceLoaded -> ServerLevel.setChunkForced 內部會呼叫
+        // getChunk(x, z) ——那是**同步、會現場生成**的載入。直接對一個沒生成過的遠方區塊
+        // 下 forceload,等於在主執行緒跑一次地形生成。實測(Paper 26.1.2,1750 格/tick 的
+        // 珍珠打進全新地獄)單一 tick 因此卡了 6~8 秒,珍珠反而比不裝插件還慢 10 倍。
+        //
+        // 所以改成:先用 Paper 的非同步 API 把區塊叫起來(生成跑在 chunk worker 執行緒,
+        // 主執行緒照常 20 TPS),等它真的載入完、回到主執行緒之後才掛 forceload——這時
+        // 那次內部 getChunk 是快取命中,不會阻塞。
+        //
+        ledger.pending.add(key);
+        world.getChunkAtAsync(chunkX, chunkZ, true, chunk -> onChunkReady(world.getUID(), key));
+    }
+
+    /** 非同步載入完成(主執行緒)後才真正掛上 forceload;期間若已被釋放就什麼都不做。 */
+    private void onChunkReady(final UUID worldId, final long key) {
+        final WorldLedger ledger = this.ledgers.get(worldId);
+        if (ledger == null || !ledger.pending.remove(key) || !ledger.refCounts.containsKey(key)) {
+            return; // 珍珠早就飛走 / 消失了,這張路不用鋪了
+        }
+        final World world = this.plugin.getServer().getWorld(worldId);
+        if (world == null) {
+            return;
+        }
+        final int chunkX = ChunkKey.x(key);
+        final int chunkZ = ChunkKey.z(key);
+        if (world.isChunkForceLoaded(chunkX, chunkZ)) {
+            ledger.foreign.add(key); // 這段期間被別人 forceload 了,不接管
+            return;
+        }
+        world.setChunkForceLoaded(chunkX, chunkZ, true);
     }
 
     private void release(final UUID worldId, final long key) {
@@ -235,6 +275,9 @@ final class ForceLoadManager {
         ledger.refCounts.remove(key);
         if (ledger.foreign.remove(key)) {
             return; // 外來的 forceload,原封不動還回去
+        }
+        if (ledger.pending.remove(key)) {
+            return; // 還在非同步載入中,根本還沒 forceload,不用解除
         }
         final World world = this.plugin.getServer().getWorld(worldId);
         if (world != null) {
@@ -256,8 +299,8 @@ final class ForceLoadManager {
         for (final Map.Entry<UUID, WorldLedger> entry : this.ledgers.entrySet()) {
             final WorldLedger ledger = entry.getValue();
             for (final long key : ledger.refCounts.keySet()) {
-                if (ledger.foreign.contains(key)) {
-                    continue; // 不是我們設的,不要記進去,免得下次啟動幫別人解除
+                if (ledger.foreign.contains(key) || ledger.pending.contains(key)) {
+                    continue; // 不是我們設的(或還沒設上去),不要記進去
                 }
                 entries.add(new ClaimJournal.Entry(entry.getKey(), ChunkKey.x(key), ChunkKey.z(key)));
             }
@@ -269,6 +312,8 @@ final class ForceLoadManager {
     private static final class WorldLedger {
         private final Map<Long, Integer> refCounts = new HashMap<>();
         private final Set<Long> foreign = new HashSet<>();
+        /** 已經送出非同步載入、但還沒真正掛上 forceload 的區塊。 */
+        private final Set<Long> pending = new HashSet<>();
     }
 
     /** 某顆珍珠目前佔用的世界與區塊集合。 */
