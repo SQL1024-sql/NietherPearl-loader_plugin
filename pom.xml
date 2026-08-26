@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.sql1024</groupId>
+  <artifactId>netherpearl-loader</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>NetherPearlLoader</name>
+  <description>Force-loads chunks around flying ender pearls in the Nether only.</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>25</maven.compiler.source>
+    <maven.compiler.target>25</maven.compiler.target>
+    <!--
+      Paper 26.1.2 的 API 座標。artifact 版本不是猜的,是查 repo.papermc.io 的
+      maven-metadata.xml 得到的:26.1.2 這條線最後一個 stable build 是 build.74。
+      (jar 內 apiVersioning.json = {"version":"26.1.2.build.74-stable","currentApiVersion":"26.1.2"})
+      paper-api 本身以 Java 25 (class major 69) 編譯,所以 source/target 25 是必要的,不是選配。
+    -->
+    <paper.api.version>26.1.2.build.74-stable</paper.api.version>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>papermc</id>
+      <url>https://repo.papermc.io/repository/maven-public/</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.papermc.paper</groupId>
+      <artifactId>paper-api</artifactId>
+      <version>${paper.api.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>${project.name}-${project.version}</finalName>
+    <defaultGoal>clean package</defaultGoal>
+    <resources>
+      <!-- plugin.yml 需要 ${project.version} 代換,其餘資源原樣複製 -->
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+        <includes>
+          <include>plugin.yml</include>
+        </includes>
+      </resource>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+        <excludes>
+          <exclude>plugin.yml</exclude>
+        </excludes>
+      </resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.14.0</version>
+        <configuration>
+          <compilerArgs>
+            <arg>-Xlint:all,-serial</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

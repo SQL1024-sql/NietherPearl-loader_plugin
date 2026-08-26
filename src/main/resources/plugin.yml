@@ -1,0 +1,19 @@
+name: NetherPearlLoader
+version: '${project.version}'
+main: io.github.sql1024.netherpearlloader.NetherPearlLoaderPlugin
+api-version: '26.1'
+description: Force-loads chunks around flying ender pearls in the Nether only.
+author: SQL1024-sql
+load: POSTWORLD
+
+commands:
+  netherpearlloader:
+    description: NetherPearlLoader 管理指令
+    aliases: [npl]
+    usage: /npl <reload|status>
+    permission: netherpearlloader.admin
+
+permissions:
+  netherpearlloader.admin:
+    description: 使用 /npl 指令
+    default: op
