@@ -89,6 +89,37 @@ CraftWorld.setChunkForceLoaded → ServerLevel.setChunkForced →
 下 forceload 等於在主執行緒跑地形生成。插件因此改成:先 `getChunkAtAsync` 把區塊叫起來
 (生成跑在 chunk worker),回到主執行緒後才掛 forceload。
 
+## 讓「弱加載蓄力」和「地獄飛行加載」並存
+
+蓄力中的珍珠要 32 級(載入但不 tick,珍珠才凍得住),飛行中的珍珠要 31 級
+(entity ticking,珍珠才會動)——需求完全相反。而且兩者從 API 看一模一樣:都有巨大
+Motion、都靜止不動(飛行中的珍珠在等區塊載入時同樣不動)。
+
+如果炮膛在**主世界**,`nether-only: true` 就已經完全隔離了,不必再做任何事。
+如果炮膛也在**地獄**,用 `stasis-protection` 的兩層保護:
+
+| 手段 | 機制 | 優點 / 缺點 |
+|---|---|---|
+| `skip-idle-pearls` | 珍珠「動過一次」才接管 | 零設定;插件 reload 會忘記,卡在半路的珍珠要再動一格才會被接回 |
+| `protected-chunks` | 列出的區塊永遠不 forceload | 確定性、不受 reload 影響;要手動填炮膛座標 |
+
+兩者實測驗證(Paper 26.1.2):
+
+```
+# skip-idle-pearls:珍珠靜止時插件零介入,動了才接管
+[NetherPearlLoader] pearl 70dddf83 動了,開始接管 (5.5, 200.0, 0.5)
+
+# protected-chunks 設為區塊 1..3 之後
+T5  x=20.0  chunk=1,0  forced=false   ← 保護區內,拒絕 forceload
+T19 x=82.4  chunk=5,0  forced=true    ← 保護區外,正常接管
+```
+
+⚠ **這兩層保護只能保證「插件不會去 tick 你的蓄力珍珠」,不能阻止原版自己 tick 它。**
+自 1.21.2 起,珍珠移動進新區塊時會替自己建立 31 級 ticket。實測中保護區內的珍珠仍然
+飛過去了,就是這個原因——它自己的 ticket 把區塊升到了 31 級。蓄力之所以成立,是因為
+凍住的珍珠**沒被 tick 就無法刷新自己的 ticket**,2 秒後 ticket 過期,它才會一直凍著。
+所以插件能做到的是「不要成為那個弄醒它的人」,其餘仍由你的紅石結構負責。
+
 ## config.yml
 
 ```yaml

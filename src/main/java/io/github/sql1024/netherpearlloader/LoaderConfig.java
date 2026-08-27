@@ -13,6 +13,8 @@ import org.bukkit.configuration.file.FileConfiguration;
  * @param predictMode       鋪路策略(走廊 / 只鋪落點 / 自動)
  * @param predictTicks      往前預測幾 tick
  * @param maxChunksPerPearl 每顆珍珠的區塊數上限(安全閥)
+ * @param skipIdlePearls    靜止(蓄力中)的珍珠完全不介入,珍珠動過一次才接管
+ * @param protectedRegions  絕對不碰的區塊範圍(炮膛)
  * @param recoverOnEnable   啟動時清理上一輪(當機)殘留的 forceload
  * @param journalIntervalTicks 殘留紀錄檔的最小寫入間隔(tick)
  */
@@ -24,6 +26,8 @@ record LoaderConfig(int radius,
                     PathMode predictMode,
                     int predictTicks,
                     int maxChunksPerPearl,
+                    boolean skipIdlePearls,
+                    java.util.List<ProtectedRegion> protectedRegions,
                     boolean recoverOnEnable,
                     long journalIntervalTicks) {
 
@@ -41,11 +45,24 @@ record LoaderConfig(int radius,
         final int predictTicks = clamp(cfg.getInt("predict.ticks", 1), 1, 20);
         final int cap = clamp(cfg.getInt("predict.max-chunks-per-pearl", 256), 1, HARD_CHUNK_CAP);
 
+        final boolean skipIdle = cfg.getBoolean("stasis-protection.skip-idle-pearls", true);
+        final java.util.List<ProtectedRegion> protectedRegions = ProtectedRegion.from(cfg);
+
         final boolean recover = cfg.getBoolean("recover-on-enable", true);
         final long journalInterval = Math.max(20L, cfg.getLong("journal-interval-ticks", 100L));
 
         return new LoaderConfig(radius, interval, netherOnly, debug,
-                predict, mode, predictTicks, cap, recover, journalInterval);
+                predict, mode, predictTicks, cap, skipIdle, protectedRegions, recover, journalInterval);
+    }
+
+    /** 這個區塊是不是落在「絕對不碰」的炮膛範圍裡。 */
+    boolean isProtected(final String worldName, final int chunkX, final int chunkZ) {
+        for (final ProtectedRegion region : this.protectedRegions) {
+            if (region.covers(worldName, chunkX, chunkZ)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 不預測時,單顆珍珠固定就是 (2r+1)^2 個區塊。 */
