@@ -15,27 +15,32 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.util.Vector;
 
-import java.util.Locale;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * The per-tick loop: correct against reality, decide whether the flight has
- * converged, predict where the pearl is going and pin those chunks before the
- * entities tick.
+ * The per-tick loop: decide whether the pearl is actually under way, correct
+ * against reality, and pin the chunks it is about to reach.
  *
  * <p>Bukkit runs the scheduler heartbeat earlier in the server tick than the
  * world/entity tick, so a chunk pinned here is pinned <em>before</em> the pearl
  * moves into it this same tick. That ordering is what makes the whole approach
  * work; do not move this onto an async task.
+ *
+ * <p><b>Held pearls must never be pinned.</b> A pearl sitting in a chunk that is
+ * loaded but not entity-ticking does not move and does not lose momentum to
+ * drag, which is exactly what a pearl cannon relies on while explosions charge
+ * it up. Pinning that chunk raises it to entity-ticking and fires the cannon on
+ * the spot, so the pin is gated on the entity actually having ticked, not on it
+ * merely carrying a large Motion.
  */
 public final class PearlTracker implements Runnable {
 
@@ -46,10 +51,10 @@ public final class PearlTracker implements Runnable {
     private final NamespacedKey launchTickKey;
 
     private final Map<UUID, TrackedPearl> tracked = new LinkedHashMap<>();
-    /** Pearls that were too slow at launch and are being re-measured for a few ticks. */
-    private final Map<UUID, Candidate> candidates = new LinkedHashMap<>();
     /** Players who ran {@code /pearltrack next} and have not thrown a pearl yet. */
     private final Set<UUID> pendingManual = new HashSet<>();
+    /** Pearls that were too slow at launch and are being re-measured for a few ticks. */
+    private final Map<UUID, Candidate> candidates = new LinkedHashMap<>();
 
     private TrackConfig config;
     private long serverTick;
@@ -65,7 +70,7 @@ public final class PearlTracker implements Runnable {
     }
 
     /** A pearl whose speed may still be raised after {@code ProjectileLaunchEvent} has fired. */
-    private record Candidate(UUID world, String shooter, long expiresAtTick) {
+    private record Candidate(UUID world, String shooter, int ticksLived, long expiresAtTick) {
     }
 
     public void setConfig(TrackConfig config) {
@@ -104,6 +109,8 @@ public final class PearlTracker implements Runnable {
         return pendingManual.contains(player);
     }
 
+    // ------------------------------------------------------------- candidates
+
     /**
      * Re-measures a pearl that was below the speed gate when it was launched.
      *
@@ -118,7 +125,7 @@ public final class PearlTracker implements Runnable {
             return;
         }
         candidates.put(pearl.getUniqueId(), new Candidate(pearl.getWorld().getUID(), shooter,
-                serverTick + config.lateSpeedCheckTicks()));
+                pearl.getTicksLived(), serverTick + config.lateSpeedCheckTicks()));
     }
 
     private void processCandidates() {
@@ -133,7 +140,12 @@ public final class PearlTracker implements Runnable {
                 continue;
             }
             Vector velocity = entity.getVelocity();
-            if (Math.hypot(velocity.getX(), velocity.getZ()) >= config.onlyIfSpeedAbove()) {
+            // Both conditions matter: a pearl charging in a cannon carries an
+            // enormous Motion while standing perfectly still, and adopting it
+            // here would pin its chunk and fire it.
+            boolean fast = Math.hypot(velocity.getX(), velocity.getZ()) >= config.onlyIfSpeedAbove();
+            boolean ticking = entity.getTicksLived() != candidate.ticksLived();
+            if (fast && ticking) {
                 it.remove();
                 if (!isFull()) {
                     beginTracking(entity, candidate.shooter());
@@ -147,9 +159,9 @@ public final class PearlTracker implements Runnable {
     // ------------------------------------------------------------------ start
 
     /**
-     * Starts tracking a pearl that was just launched. Pins its first chunks
-     * immediately: the pearl moves during this very tick, long before the
-     * scheduler next runs, so waiting would lose the first hop.
+     * Starts tracking a pearl. Nothing is pinned unless the pearl is already
+     * moving fast: at this point it may just as easily be sitting in a cannon
+     * waiting to be charged, and one pin would launch it.
      */
     public TrackedPearl beginTracking(Entity entity, String shooter) {
         World world = entity.getWorld();
@@ -159,21 +171,37 @@ public final class PearlTracker implements Runnable {
         TrackedPearl pearl = new TrackedPearl(entity.getUniqueId(), world.getUID(), world.getName(), shooter,
                 new Vec3d(loc.getX(), loc.getY(), loc.getZ()),
                 new Vec3d(vel.getX(), vel.getY(), vel.getZ()));
+        pearl.setLastTicksLived(entity.getTicksLived());
 
         entity.getPersistentDataContainer().set(trackedKey, PersistentDataType.BYTE, (byte) 1);
         entity.getPersistentDataContainer().set(launchTickKey, PersistentDataType.LONG, serverTick);
 
-        if (config.disableCollision()) {
-            entity.setNoPhysics(true);
-            pearl.setCollisionDisabled(true);
-        }
-
         tracked.put(pearl.uuid(), pearl);
         flightLogger.open(pearl);
-        tickets.apply(world, pearl.uuid(), desiredChunks(pearl), serverTick);
-        flightLogger.write(pearl, FlightEvent.LAUNCH, 0.0D, tickets.countFor(pearl.uuid()),
-                "by " + shooter + " hSpeed=" + String.format(Locale.ROOT, "%.3f", pearl.horizontalSpeed()));
+        flightLogger.write(pearl, FlightEvent.LAUNCH, 0.0D, 0,
+                String.format(Locale.ROOT, "by %s hSpeed=%.3f", shooter, pearl.horizontalSpeed()));
         return pearl;
+    }
+
+    /**
+     * Adopts ender pearls already in the world near {@code origin} — the way to
+     * pick up a pearl that is sitting in a cannon rather than being thrown.
+     *
+     * @return how many pearls were adopted
+     */
+    public int adopt(Location origin, double radius) {
+        int adopted = 0;
+        for (Entity entity : origin.getWorld().getNearbyEntities(origin, radius, radius, radius)) {
+            if (!(entity instanceof org.bukkit.entity.EnderPearl) || tracked.containsKey(entity.getUniqueId())) {
+                continue;
+            }
+            if (isFull()) {
+                break;
+            }
+            beginTracking(entity, "adopted");
+            adopted++;
+        }
+        return adopted;
     }
 
     // ------------------------------------------------------------------- loop
@@ -203,19 +231,48 @@ public final class PearlTracker implements Runnable {
             finish(pearl, EndReason.WORLD_UNLOADED, null);
             return;
         }
-        pearl.advanceTick();
 
-        // (A) Correct against reality whenever the entity is reachable again, or
-        //     roll the model forward one tick when it is not.
         Entity entity = world.getEntity(pearl.uuid());
-        int pinnedBefore = tickets.countFor(pearl.uuid());
-        double drift = 0.0D;
-        if (entity != null && entity.isValid()) {
+        boolean observed = entity != null && entity.isValid();
+
+        boolean ticking = false;
+        Vec3d observedPos = null;
+        Vec3d observedMotion = null;
+        if (observed) {
+            int ticksLived = entity.getTicksLived();
+            ticking = pearl.lastTicksLived() >= 0 && ticksLived != pearl.lastTicksLived();
+            pearl.setLastTicksLived(ticksLived);
             Location loc = entity.getLocation();
             Vector vel = entity.getVelocity();
-            drift = pearl.applyCorrection(
-                    new Vec3d(loc.getX(), loc.getY(), loc.getZ()),
-                    new Vec3d(vel.getX(), vel.getY(), vel.getZ()));
+            observedPos = new Vec3d(loc.getX(), loc.getY(), loc.getZ());
+            observedMotion = new Vec3d(vel.getX(), vel.getY(), vel.getZ());
+        }
+
+        // A pearl is under way only when it is moving fast AND actually ticking
+        // (or has already left the loaded area, which it can only do by moving).
+        double hSpeed = observed ? observedMotion.horizontalLength() : pearl.horizontalSpeed();
+        boolean underWay = hSpeed >= config.onlyIfSpeedAbove() && (!observed || ticking);
+
+        if (!underWay) {
+            hold(pearl, observed, observedPos, observedMotion, hSpeed);
+            return;
+        }
+        if (pearl.holding()) {
+            pearl.beginFlight();
+            flightLogger.write(pearl, FlightEvent.FIRED, 0.0D, 0, String.format(Locale.ROOT,
+                    "held %d ticks, leaving at %.2f b/t, %.0f blocks of flight ahead",
+                    pearl.holdTicks(), hSpeed,
+                    PearlPhysics.remainingHorizontalDistance(hSpeed, config.drag())));
+        }
+
+        pearl.advanceTick();
+
+        // (A) Correct against reality whenever the entity is reachable, or roll
+        //     the model forward one tick when it is not.
+        int pinnedBefore = tickets.countFor(pearl.uuid());
+        double drift = 0.0D;
+        if (observed) {
+            drift = pearl.applyCorrection(observedPos, observedMotion);
             // noPhysics is not part of the entity's saved data, so it has to be
             // re-applied every time the pearl comes back from an unloaded chunk.
             if (config.disableCollision() && !pearl.converged() && !entity.hasNoPhysics()) {
@@ -246,12 +303,11 @@ public final class PearlTracker implements Runnable {
 
         // (C) Convergence: once a single tick no longer skips whole chunks, stop
         //     predicting ahead and just keep a normal-sized loaded area with it.
-        double hSpeed = pearl.horizontalSpeed();
-        if (!pearl.converged() && hSpeed < config.convergenceThreshold()) {
+        if (!pearl.converged() && pearl.horizontalSpeed() < config.convergenceThreshold()) {
             pearl.markConverged(pearl.pos());
             flightLogger.write(pearl, FlightEvent.CONVERGED, drift, pinnedBefore,
                     String.format(Locale.ROOT, "hSpeed=%.4f at (%s)",
-                            hSpeed, pearl.pos().format()));
+                            pearl.horizontalSpeed(), pearl.pos().format()));
         }
 
         if (pearl.converged()) {
@@ -266,18 +322,44 @@ public final class PearlTracker implements Runnable {
             // is all it needs now that it stays inside a chunk or two per tick.
             LinkedHashSet<Long> keep = new LinkedHashSet<>();
             addChunks(keep, pearl.pos(), config.keepRadiusAfterConvergence());
-            tickets.apply(world, pearl.uuid(), keep, serverTick);
+            tickets.apply(world, pearl.uuid(), excludeHoldArea(pearl, keep), serverTick);
             pearl.setPredictedNext(step(pearl.state()).pos());
             return;
         }
 
         // (D) Predict and pin, nearest future first.
         pearl.setPredictedNext(step(pearl.state()).pos());
-        int dropped = tickets.apply(world, pearl.uuid(), desiredChunks(pearl), serverTick);
+        int dropped = tickets.apply(world, pearl.uuid(),
+                excludeHoldArea(pearl, desiredChunks(pearl)), serverTick);
 
         if (!pearl.lastWasReal()) {
             flightLogger.write(pearl, FlightEvent.PREDICTED, 0.0D, tickets.countFor(pearl.uuid()),
                     dropped > 0 ? "budget dropped " + dropped : null);
+        }
+    }
+
+    /**
+     * The pearl is not under way: either still too slow to need help, or loaded
+     * but not ticking. Every pin is dropped, because raising its chunk to
+     * entity-ticking is exactly what would set it off.
+     */
+    private void hold(TrackedPearl pearl, boolean observed, Vec3d pos, Vec3d motion, double hSpeed) {
+        tickets.releaseAll(pearl.uuid());
+
+        if (observed) {
+            pearl.observeHold(pos, motion, ChunkKeys.of(pos.chunkX(), pos.chunkZ()));
+        } else {
+            pearl.observeBlindHold();
+        }
+
+        if (pearl.holdTicks() >= config.maxHoldTicks()) {
+            finish(pearl, EndReason.HOLD_TIMEOUT, null);
+            return;
+        }
+        if (config.holdLogIntervalTicks() > 0 && pearl.holdTicks() % config.holdLogIntervalTicks() == 0) {
+            flightLogger.write(pearl, FlightEvent.HOLDING, 0.0D, 0, String.format(Locale.ROOT,
+                    "hold=%d hSpeed=%.2f gain=%+.3f/tick%s",
+                    pearl.holdTicks(), hSpeed, pearl.holdSpeedGain(), observed ? "" : " (out of sight)"));
         }
     }
 
@@ -309,8 +391,8 @@ public final class PearlTracker implements Runnable {
             note.append(" convergedAtTick=").append(pearl.convergedAtTick())
                     .append(" convergencePoint=(").append(pearl.convergencePoint().format()).append(')');
         }
-        note.append(String.format(Locale.ROOT, " travelled=%.1f corrections=%d maxDrift=%.4f",
-                pearl.travelled(), pearl.corrections(), pearl.maxDrift()));
+        note.append(String.format(Locale.ROOT, " held=%d travelled=%.1f corrections=%d maxDrift=%.4f",
+                pearl.holdTicks(), pearl.travelled(), pearl.corrections(), pearl.maxDrift()));
         if (extra != null) {
             note.append(' ').append(extra);
         }
@@ -365,6 +447,26 @@ public final class PearlTracker implements Runnable {
             addChunks(out, probe.pos(), radius);
         }
         return out;
+    }
+
+    /**
+     * Drops the chunk the pearl was last held in, plus a margin, from a pin set.
+     *
+     * <p>A launcher is a fixed place that has to be able to drop below
+     * entity-ticking. Predictions are normally thousands of blocks away so this
+     * removes nothing, but it is the one mistake that silently breaks a cannon,
+     * and it costs one set lookup to rule out.
+     */
+    private LinkedHashSet<Long> excludeHoldArea(TrackedPearl pearl, LinkedHashSet<Long> desired) {
+        if (!pearl.hasHoldChunk()) {
+            return desired;
+        }
+        int radius = config.holdExclusionRadius();
+        int hx = ChunkKeys.x(pearl.holdChunk());
+        int hz = ChunkKeys.z(pearl.holdChunk());
+        desired.removeIf(key -> Math.abs(ChunkKeys.x(key) - hx) <= radius
+                && Math.abs(ChunkKeys.z(key) - hz) <= radius);
+        return desired;
     }
 
     private void addChunks(Set<Long> out, Vec3d pos, int radius) {

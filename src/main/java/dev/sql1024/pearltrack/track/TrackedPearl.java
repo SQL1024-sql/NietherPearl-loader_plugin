@@ -45,6 +45,20 @@ public final class TrackedPearl {
      */
     private final Set<Long> unconfirmedChunks = new LinkedHashSet<>();
 
+    /**
+     * {@code getTicksLived()} at the previous observation. Unchanged between two
+     * server ticks means the entity did not tick at all, which is the only
+     * reliable read on whether its chunk is entity-ticking.
+     */
+    private int lastTicksLived = -1;
+    private boolean holding = true;
+    private int holdTicks;
+    private double previousHoldSpeed;
+    private double holdSpeedGain;
+    private boolean hasHoldChunk;
+    private long holdChunk;
+    private int firedAtHoldTick = -1;
+
     private boolean collisionDisabled;
 
     public TrackedPearl(UUID uuid, UUID worldUid, String worldName, String shooter,
@@ -194,6 +208,65 @@ public final class TrackedPearl {
         if (unconfirmedChunks.size() < cap) {
             unconfirmedChunks.add(key);
         }
+    }
+
+    public int lastTicksLived() {
+        return lastTicksLived;
+    }
+
+    public void setLastTicksLived(int lastTicksLived) {
+        this.lastTicksLived = lastTicksLived;
+    }
+
+    public boolean holding() {
+        return holding;
+    }
+
+    public int holdTicks() {
+        return holdTicks;
+    }
+
+    /** Blocks/tick of horizontal momentum gained during the last held tick. */
+    public double holdSpeedGain() {
+        return holdSpeedGain;
+    }
+
+    public boolean hasHoldChunk() {
+        return hasHoldChunk;
+    }
+
+    public long holdChunk() {
+        return holdChunk;
+    }
+
+    public int firedAtHoldTick() {
+        return firedAtHoldTick;
+    }
+
+    /** Records a tick where the pearl is loaded but not ticking. */
+    public void observeHold(Vec3d pos, Vec3d motion, long chunk) {
+        this.state = new Step(pos, motion);
+        this.lastRealPos = pos;
+        this.holding = true;
+        this.holdTicks++;
+        double speed = motion.horizontalLength();
+        this.holdSpeedGain = speed - previousHoldSpeed;
+        this.previousHoldSpeed = speed;
+        this.hasHoldChunk = true;
+        this.holdChunk = chunk;
+        this.unconfirmedChunks.clear();
+    }
+
+    /** Records a held tick where the pearl could not be seen at all. */
+    public void observeBlindHold() {
+        this.holding = true;
+        this.holdTicks++;
+        this.holdSpeedGain = 0.0D;
+    }
+
+    public void beginFlight() {
+        this.holding = false;
+        this.firedAtHoldTick = holdTicks;
     }
 
     public boolean collisionDisabled() {

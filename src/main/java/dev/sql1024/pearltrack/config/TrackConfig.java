@@ -21,6 +21,8 @@ public record TrackConfig(
         int lateSpeedCheckTicks,
         int maxConcurrent,
         int maxTicks,
+        int maxHoldTicks,
+        int holdLogIntervalTicks,
         int lookaheadTicks,
         int forceloadRadius,
         double convergenceThreshold,
@@ -32,6 +34,7 @@ public record TrackConfig(
         TicketMode ticketMode,
         int maxForcedChunks,
         int recoveryChunks,
+        int holdExclusionRadius,
         int warnThrottleTicks,
         boolean urgentLoad,
 
@@ -52,6 +55,8 @@ public record TrackConfig(
         int lateCheck = Math.max(0, cfg.getInt("tracking.late-speed-check-ticks", 3));
         int maxConcurrent = Math.max(1, cfg.getInt("tracking.max-concurrent", 4));
         int maxTicks = Math.max(1, cfg.getInt("tracking.max-ticks", 6000));
+        int maxHold = Math.max(1, cfg.getInt("tracking.max-hold-ticks", 24000));
+        int holdLog = Math.max(0, cfg.getInt("tracking.hold-log-interval-ticks", 20));
         int lookahead = Math.max(1, cfg.getInt("tracking.lookahead-ticks", 5));
         int radius = Math.max(0, cfg.getInt("tracking.forceload-radius", 0));
         double convergence = Math.max(0.0D, cfg.getDouble("tracking.convergence-threshold", 16.0D));
@@ -63,6 +68,7 @@ public record TrackConfig(
         TicketMode mode = parseMode(cfg.getString("chunks.mode", "PLUGIN_TICKET"), logger);
         int maxForced = Math.max(1, cfg.getInt("chunks.max-forced-chunks", 256));
         int recovery = Math.max(0, cfg.getInt("chunks.recovery-chunks", 8));
+        int holdExclusion = Math.max(0, cfg.getInt("chunks.hold-exclusion-radius", 1));
         int warnThrottle = Math.max(1, cfg.getInt("chunks.warn-throttle-ticks", 100));
         boolean urgent = cfg.getBoolean("chunks.urgent-load", true);
 
@@ -73,9 +79,9 @@ public record TrackConfig(
         int flush = Math.max(1, cfg.getInt("logging.flush-interval-ticks", 20));
 
         return new TrackConfig(drag, gravity, order,
-                autoTrackAll, speedGate, lateCheck, maxConcurrent, maxTicks, lookahead, radius,
+                autoTrackAll, speedGate, lateCheck, maxConcurrent, maxTicks, maxHold, holdLog, lookahead, radius,
                 convergence, keepTicks, keepRadius, noCollision, coordLimit,
-                mode, maxForced, recovery, warnThrottle, urgent,
+                mode, maxForced, recovery, holdExclusion, warnThrottle, urgent,
                 logEnabled, toConsole, dir == null ? "flights" : dir, logPredicted, flush);
     }
 

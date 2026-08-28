@@ -5,6 +5,7 @@ public enum EndReason {
     LANDED_OR_HIT,
     CONVERGED_DONE,
     TIMEOUT,
+    HOLD_TIMEOUT,
     OUT_OF_BOUNDS,
     WORLD_UNLOADED,
     STOPPED_BY_COMMAND,

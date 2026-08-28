@@ -73,6 +73,44 @@ chunk 裡。CSV 應該幾乎全是 `REAL`。
 `chunks.recovery-chunks` 就是這個恢復機制:失去實體後,模型走過但未經實體確認的前幾個 chunk
 會一直釘著。珍珠只可能凍在其中之一,放掉就再也回不來了。
 
+## 珍珠炮:蓄能期間絕對不能碰
+
+靠弱加載蓄能的珍珠炮,原理是把珍珠留在一個**已載入但非 entity-ticking** 的 chunk 裡:
+珍珠不 tick,所以不移動、也不會被阻力衰減,但爆炸的擊退仍然照常施加在它身上 ——
+動量只進不出,一路累積。最後把該 chunk 升到 entity-ticking,珍珠帶著全部動量射出。
+
+這對本外掛是致命的:**釘任何一格 chunk 就是把它升到 entity-ticking**。
+蓄能中的珍珠 `Motion` 已經是幾千 b/t,如果只用「速度夠快」當判準,外掛會在蓄能期間
+把炮的 chunk 釘住,珍珠帶著半吊子的動量提前發射,炮就廢了。
+
+所以「正在飛行」的判準是**兩個條件同時成立**:
+
+```java
+boolean underWay = hSpeed >= gate && (!observed || ticking);
+```
+
+`ticking` 來自 `Entity#getTicksLived()` 相鄰兩次觀測有沒有變化 —— 這是唯一可靠、
+不需要 chunk API 就能回答「這格 chunk 是不是 entity-ticking」的方法。
+
+只要珍珠處在 held 狀態,外掛會**主動釋放它的所有 ticket**,並把最後一次 held 的
+chunk(± `chunks.hold-exclusion-radius`)從任何釘選集合裡剔除。
+
+發射的那一刻通常是「珍珠突然從視野消失」(它在該 tick 移動出已載入範圍)。外掛從最後
+觀測到的 `(pos, motion)` 接手預測 —— 凍住的珍珠動量完全保留,所以這一 tick 的停頓
+不影響彈道,只是整趟晚一個 tick。
+
+### 用在珍珠炮上的流程
+
+```
+/pearltrack adopt          # 珍珠已經在炮裡蓄能 → 直接認養,不會驚動它
+/pearltrack status         # 看 momentum 累積速率、以及「現在發射能飛多遠」
+(發射)                     # 外掛在它離開視野的下一 tick 自動接手
+```
+
+`/pearltrack next` 也可以,差別是它在珍珠被丟出的那一刻就開始追(蓄能全程都看得到)。
+`auto-track-all-pearls` 的自動偵測**不會**認養蓄能中的珍珠(它會同時檢查 ticking),
+這是刻意的 —— 自動邏輯不該碰你的炮。
+
 ## 收斂
 
 水平速度掉到 `convergence-threshold`（預設 16 b/t，＝一 tick 不再跨越整個 chunk）時：

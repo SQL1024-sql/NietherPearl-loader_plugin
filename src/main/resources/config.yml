@@ -37,8 +37,22 @@ tracking:
   # Most pearls tracked at once. Each one costs its own chunk budget.
   max-concurrent: 4
 
-  # Hard stop, in ticks. 6000 = 5 minutes.
+  # Hard stop once the pearl is under way, in ticks. 6000 = 5 minutes. Time spent
+  # held in a launcher does not count towards this.
   max-ticks: 6000
+
+  # A pearl is only "under way" when it is moving fast AND actually ticking.
+  # One sitting in a cannon carries an enormous Motion while standing perfectly
+  # still, because its chunk is loaded but not entity-ticking: it neither moves
+  # nor loses momentum to drag, which is what lets explosions charge it up.
+  # While a pearl is in that state this plugin pins nothing at all — a single pin
+  # would raise the chunk to entity-ticking and fire the cannon on the spot.
+  #
+  # How long to keep waiting on a held pearl before giving up. 24000 = 20 minutes.
+  max-hold-ticks: 24000
+
+  # Log a line every N held ticks showing accumulated momentum. 0 = never.
+  hold-log-interval-ticks: 20
 
   # How many ticks ahead to pin. A ticket does not load a chunk instantly —
   # ungenerated terrain can take several ticks — so this is the head start the
@@ -94,6 +108,12 @@ chunks:
   # real observation stay pinned — the pearl is stranded in one of them, and
   # releasing it would strand the pearl permanently. 0 disables the recovery.
   recovery-chunks: 8
+
+  # Never pin within this many chunks of where a pearl was last held. A launcher
+  # is a fixed place that has to be able to drop below entity-ticking; predictions
+  # are normally thousands of blocks away so this usually removes nothing, but it
+  # is the one mistake that silently breaks a cannon.
+  hold-exclusion-radius: 1
 
   # Minimum ticks between two "budget is full" warnings.
   warn-throttle-ticks: 100

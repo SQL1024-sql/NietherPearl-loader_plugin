@@ -57,6 +57,7 @@ public final class PearlTrackCommand implements BasicCommand {
             case "status" -> status(sender, args.length > 1 ? args[1] : null);
             case "list" -> list(sender);
             case "next" -> next(sender);
+            case "adopt" -> adopt(sender, args.length > 1 ? args[1] : null);
             case "stop" -> stop(sender, args.length > 1 ? args[1] : null);
             case "reload" -> {
                 reloadAction.run();
@@ -70,7 +71,7 @@ public final class PearlTrackCommand implements BasicCommand {
     public Collection<String> suggest(CommandSourceStack source, String[] args) {
         if (args.length <= 1) {
             String prefix = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
-            return List.of("status", "list", "next", "stop", "reload").stream()
+            return List.of("status", "list", "next", "adopt", "stop", "reload").stream()
                     .filter(s -> s.startsWith(prefix))
                     .toList();
         }
@@ -95,6 +96,8 @@ public final class PearlTrackCommand implements BasicCommand {
                 .append(Component.text("  everything currently tracked", LABEL)));
         sender.sendMessage(Component.text("/pearltrack next", ACCENT)
                 .append(Component.text("  track the next pearl you throw, whatever its speed", LABEL)));
+        sender.sendMessage(Component.text("/pearltrack adopt [radius]", ACCENT)
+                .append(Component.text("  pick up pearls already in the world near you (for cannons)", LABEL)));
         sender.sendMessage(Component.text("/pearltrack stop <id|all>", ACCENT)
                 .append(Component.text("  stop tracking and release its chunks", LABEL)));
         sender.sendMessage(Component.text("/pearltrack reload", ACCENT)
@@ -111,6 +114,27 @@ public final class PearlTrackCommand implements BasicCommand {
                 "[PearlTrack] The next ender pearl you throw will be tracked.", NamedTextColor.GREEN));
     }
 
+    private void adopt(CommandSender sender, String rawRadius) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Component.text("[PearlTrack] Only a player can adopt nearby pearls.", NamedTextColor.RED));
+            return;
+        }
+        double radius = 128.0D;
+        if (rawRadius != null) {
+            try {
+                radius = Math.max(1.0D, Math.min(512.0D, Double.parseDouble(rawRadius)));
+            } catch (NumberFormatException ex) {
+                sender.sendMessage(Component.text("[PearlTrack] '" + rawRadius + "' is not a radius.", NamedTextColor.RED));
+                return;
+            }
+        }
+        int adopted = tracker.adopt(player.getLocation(), radius);
+        sender.sendMessage(adopted == 0
+                ? Component.text("[PearlTrack] No untracked ender pearl within " + (int) radius + " blocks.", LABEL)
+                : Component.text("[PearlTrack] Adopted " + adopted + " pearl(s). Nothing is pinned while they"
+                        + " sit still, so a charging cannon is left alone.", NamedTextColor.GREEN));
+    }
+
     private void list(CommandSender sender) {
         Collection<TrackedPearl> all = tracker.tracked();
         if (all.isEmpty()) {
@@ -123,7 +147,9 @@ public final class PearlTrackCommand implements BasicCommand {
             sender.sendMessage(Component.text(String.format(Locale.ROOT,
                     "  %s  tick %d  (%s)  %.1f b/t  %s",
                     pearl.uuid().toString().substring(0, 8), pearl.tick(), pearl.pos().format(),
-                    pearl.horizontalSpeed(), pearl.converged() ? "converged" : "in flight"), VALUE));
+                    pearl.horizontalSpeed(),
+                    pearl.holding() ? "held " + pearl.holdTicks() + "t"
+                            : pearl.converged() ? "converged" : "in flight"), VALUE));
         }
     }
 
@@ -178,7 +204,19 @@ public final class PearlTrackCommand implements BasicCommand {
 
         sender.sendMessage(Component.text("── PearlTrack " + pearl.uuid(), ACCENT));
         row(sender, "world / thrower", pearl.worldName() + " / " + pearl.shooter());
+        if (pearl.holding()) {
+            row(sender, "state", "HELD — loaded but not ticking, nothing pinned");
+            row(sender, "held for", pearl.holdTicks() + " ticks ("
+                    + String.format(Locale.ROOT, "%.1f", pearl.holdTicks() / 20.0D) + "s)");
+            row(sender, "momentum", String.format(Locale.ROOT, "%.2f b/t, %+.3f per tick", hSpeed, pearl.holdSpeedGain()));
+            row(sender, "range if fired now", String.format(Locale.ROOT, "%.0f blocks over %d ticks",
+                    PearlPhysics.remainingHorizontalDistance(hSpeed, cfg.drag()),
+                    PearlPhysics.ticksUntilHorizontalSpeedBelow(hSpeed, cfg.drag(), cfg.convergenceThreshold())));
+        }
         row(sender, "ticks flown", pearl.tick() + "  (" + String.format(Locale.ROOT, "%.1f", pearl.tick() / 20.0D) + "s)");
+        if (pearl.firedAtHoldTick() >= 0) {
+            row(sender, "fired after", pearl.firedAtHoldTick() + " held ticks");
+        }
         row(sender, "source this tick", pearl.lastWasReal() ? "REAL (entity is loaded)" : "PREDICTED");
         row(sender, "position", "(" + pos.format() + ")  chunk " + pos.chunkX() + "," + pos.chunkZ());
         row(sender, "predicted next tick", "(" + pearl.predictedNext().format() + ")  chunk "
