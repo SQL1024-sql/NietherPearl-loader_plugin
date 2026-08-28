@@ -52,6 +52,27 @@ Bukkit 的 scheduler heartbeat 在 `MinecraftServer#tickServer` 中**早於**世
 選 `FORCE_LOADED` 時外掛會寫一份 `forced-chunks.journal`，下次啟動若發現這個檔案還在
 （＝上次是非正常關閉），會自動把殘留的 chunk 解除。
 
+## 為什麼「弱加載」與「高速載入」不衝突
+
+外掛用的 ticket level 是 **31(entity ticking)**,跟 `/forceload` 同一級,沒有任何弱化。
+珍珠在整趟飛行中都是完全載入、正常 tick 的實體 —— 外掛不是在追一顆未載入的珍珠,
+而是**讓它從頭到尾都不會變成未載入**。
+
+看似的循環依賴(要載入 chunk 就得先知道珍珠在哪,但珍珠沒載入就讀不到)之所以不成立,
+是因為珍珠的位置與速度**不是從實體讀來的**,而是外掛記憶體裡的一個 `Step` record,
+每 tick 用純算術往前推。`PearlPhysics` 完全不引用 Bukkit,實體存不存在與它無關。
+因果鏈是「模型 → chunk」,實體從未參與決定要載入哪裡。
+
+因此在正常運作下,`world.getEntity(uuid)` **每一 tick 都抓得到** —— 珍珠永遠待在提前釘好的
+chunk 裡。CSV 應該幾乎全是 `REAL`。
+
+> **物理模型不是常態運作模式,是故障恢復模式。**
+> `PREDICTED` 那幾行代表那幾 tick chunk 沒及時載入好、珍珠真的凍住了,
+> 模型是為了「凍住期間我們還知道要去哪裡撈它回來」而存在的。
+
+`chunks.recovery-chunks` 就是這個恢復機制:失去實體後,模型走過但未經實體確認的前幾個 chunk
+會一直釘著。珍珠只可能凍在其中之一,放掉就再也回不來了。
+
 ## 收斂
 
 水平速度掉到 `convergence-threshold`（預設 16 b/t，＝一 tick 不再跨越整個 chunk）時：

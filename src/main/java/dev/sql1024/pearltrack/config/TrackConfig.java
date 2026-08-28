@@ -31,6 +31,7 @@ public record TrackConfig(
 
         TicketMode ticketMode,
         int maxForcedChunks,
+        int recoveryChunks,
         int warnThrottleTicks,
         boolean urgentLoad,
 
@@ -61,6 +62,7 @@ public record TrackConfig(
 
         TicketMode mode = parseMode(cfg.getString("chunks.mode", "PLUGIN_TICKET"), logger);
         int maxForced = Math.max(1, cfg.getInt("chunks.max-forced-chunks", 256));
+        int recovery = Math.max(0, cfg.getInt("chunks.recovery-chunks", 8));
         int warnThrottle = Math.max(1, cfg.getInt("chunks.warn-throttle-ticks", 100));
         boolean urgent = cfg.getBoolean("chunks.urgent-load", true);
 
@@ -73,7 +75,7 @@ public record TrackConfig(
         return new TrackConfig(drag, gravity, order,
                 autoTrackAll, speedGate, lateCheck, maxConcurrent, maxTicks, lookahead, radius,
                 convergence, keepTicks, keepRadius, noCollision, coordLimit,
-                mode, maxForced, warnThrottle, urgent,
+                mode, maxForced, recovery, warnThrottle, urgent,
                 logEnabled, toConsole, dir == null ? "flights" : dir, logPredicted, flush);
     }
 

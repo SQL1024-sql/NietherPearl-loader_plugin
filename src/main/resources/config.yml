@@ -87,6 +87,14 @@ chunks:
   # When the budget runs out the furthest-ahead predictions are dropped first.
   max-forced-chunks: 256
 
+  # In normal operation the pearl is always inside a chunk we pinned, so it never
+  # stops ticking and every tick is a real observation. A PREDICTED row means a
+  # chunk was not ready in time and the pearl froze in it. While that lasts the
+  # model races ahead, so this many of the chunks it passed through since the last
+  # real observation stay pinned — the pearl is stranded in one of them, and
+  # releasing it would strand the pearl permanently. 0 disables the recovery.
+  recovery-chunks: 8
+
   # Minimum ticks between two "budget is full" warnings.
   warn-throttle-ticks: 100
 

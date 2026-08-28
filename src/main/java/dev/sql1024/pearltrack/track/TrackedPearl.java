@@ -3,6 +3,8 @@ package dev.sql1024.pearltrack.track;
 import dev.sql1024.pearltrack.physics.Step;
 import dev.sql1024.pearltrack.physics.Vec3d;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -32,6 +34,16 @@ public final class TrackedPearl {
     private boolean converged;
     private int convergedAtTick = -1;
     private Vec3d convergencePoint;
+
+    /**
+     * Chunks the model has moved through since the last real fix, oldest first.
+     *
+     * <p>Losing sight of the entity means it stopped ticking, which means it is
+     * sitting in whichever of these chunks was not ready in time. The model keeps
+     * racing ahead, so without holding these the pin would be released out from
+     * under a stranded pearl and it could never come back.
+     */
+    private final Set<Long> unconfirmedChunks = new LinkedHashSet<>();
 
     private boolean collisionDisabled;
 
@@ -115,6 +127,7 @@ public final class TrackedPearl {
         this.lastWasReal = true;
         this.corrections++;
         this.lastDrift = drift;
+        this.unconfirmedChunks.clear();
         this.totalDrift += drift;
         if (drift > maxDrift) {
             this.maxDrift = drift;
@@ -170,6 +183,17 @@ public final class TrackedPearl {
         this.converged = true;
         this.convergedAtTick = tick;
         this.convergencePoint = point;
+    }
+
+    public Set<Long> unconfirmedChunks() {
+        return unconfirmedChunks;
+    }
+
+    /** Oldest entries are the likeliest stranding spots, so a full trail keeps them. */
+    public void addUnconfirmedChunk(long key, int cap) {
+        if (unconfirmedChunks.size() < cap) {
+            unconfirmedChunks.add(key);
+        }
     }
 
     public boolean collisionDisabled() {

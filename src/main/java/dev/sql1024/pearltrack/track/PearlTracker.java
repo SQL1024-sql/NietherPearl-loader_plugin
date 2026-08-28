@@ -227,6 +227,8 @@ public final class PearlTracker implements Runnable {
             boolean justLost = pearl.lastWasReal();
             pearl.setState(step(pearl.state()));
             pearl.markPredicted();
+            pearl.addUnconfirmedChunk(
+                    ChunkKeys.of(pearl.pos().chunkX(), pearl.pos().chunkZ()), config.recoveryChunks());
             if (justLost) {
                 flightLogger.write(pearl, FlightEvent.LOST, 0.0D, pinnedBefore, "entity left loaded chunks");
             }
@@ -348,6 +350,10 @@ public final class PearlTracker implements Runnable {
      */
     private LinkedHashSet<Long> desiredChunks(TrackedPearl pearl) {
         LinkedHashSet<Long> out = new LinkedHashSet<>();
+        // First, so the budget never trims these: while the entity is out of
+        // sight it is stranded in one of them, and releasing that chunk would
+        // strand it for good.
+        out.addAll(pearl.unconfirmedChunks());
         int radius = config.forceloadRadius();
         Step probe = pearl.state();
         addChunks(out, probe.pos(), radius);
