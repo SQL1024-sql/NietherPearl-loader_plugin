@@ -1,5 +1,6 @@
 package dev.sql1024.pearltrack.command;
 
+import dev.sql1024.pearltrack.compat.PaperCompat;
 import dev.sql1024.pearltrack.config.TrackConfig;
 import dev.sql1024.pearltrack.log.FlightLogger;
 import dev.sql1024.pearltrack.physics.PearlPhysics;
@@ -204,6 +205,10 @@ public final class PearlTrackCommand implements BasicCommand {
 
         sender.sendMessage(Component.text("── PearlTrack " + pearl.uuid(), ACCENT));
         row(sender, "world / thrower", pearl.worldName() + " / " + pearl.shooter());
+        org.bukkit.World world = org.bukkit.Bukkit.getWorld(pearl.worldUid());
+        if (world != null) {
+            row(sender, "pearl chunk tickets", PaperCompat.describe(world));
+        }
         if (pearl.holding()) {
             row(sender, "state", "HELD — loaded but not ticking, nothing pinned");
             row(sender, "held for", pearl.holdTicks() + " ticks ("

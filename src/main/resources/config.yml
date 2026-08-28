@@ -1,5 +1,17 @@
 # PearlTrack — keeps a very fast ender pearl inside ticking chunks by predicting
 # where it lands next tick and pinning that chunk before the entity moves.
+#
+# BEFORE ANYTHING ELSE, check paper-world-defaults.yml:
+#
+#   misc:
+#     legacy-ender-pearl-behavior: true
+#
+# Since 1.21.2 a thrown pearl holds an entity-ticking chunk ticket of its own
+# that follows it. That means a pearl cannot be parked in a weakly loaded chunk,
+# so a launcher that charges one by weak loading cannot charge at all. Setting
+# the above to true restores the pre-1.21.2 behaviour — and is what makes this
+# plugin necessary in the first place. It is reported in the startup log and in
+# /pearltrack status.
 
 physics:
   # Air drag applied to every axis each tick. Vanilla ThrowableProjectile: 0.99.

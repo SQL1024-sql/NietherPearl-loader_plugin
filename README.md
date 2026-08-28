@@ -54,6 +54,19 @@ Bukkit 的 scheduler heartbeat 在 `MinecraftServer#tickServer` 中**早於**世
 
 ## 為什麼「弱加載」與「高速載入」不衝突
 
+> 註:`world.getEntity(uuid)` 在「已載入但非 entity-ticking」的 chunk 裡**抓得到**珍珠。
+> 這在 26.1.2 的 `EntityLookup` 得到證實 —— `get(UUID)` 過的濾網是 `isAccessible()`
+> 而非 `isTicking()`:
+> ```java
+> private static Entity maskNonAccessible(final Entity entity) {
+>     final Visibility visibility = EntityLookup.getEntityStatus(entity);
+>     return visibility.isAccessible() ? entity : null;
+> }
+> ```
+> `Visibility.fromFullChunkStatus`:FULL(level 33)→ `TRACKED`(accessible、不 ticking),
+> ENTITY_TICKING(level 31)→ `TICKING`。1.17 把實體改成獨立 section 儲存時引入的兩軸狀態,
+> 到今天仍然成立,所以 `getTicksLived()` 的判準是可靠的。
+
 外掛用的 ticket level 是 **31(entity ticking)**,跟 `/forceload` 同一級,沒有任何弱化。
 珍珠在整趟飛行中都是完全載入、正常 tick 的實體 —— 外掛不是在追一顆未載入的珍珠,
 而是**讓它從頭到尾都不會變成未載入**。
@@ -72,6 +85,58 @@ chunk 裡。CSV 應該幾乎全是 `REAL`。
 
 `chunks.recovery-chunks` 就是這個恢復機制:失去實體後,模型走過但未經實體確認的前幾個 chunk
 會一直釘著。珍珠只可能凍在其中之一,放掉就再也回不來了。
+
+## ⚠️ 先決條件:`legacy-ender-pearl-behavior`
+
+**1.21.2 起,終界珍珠會自己抓著一個 entity-ticking 的 chunk ticket,而且跟著它移動。**
+這是「1.17 可以、現在不行」的原因。
+
+Paper 26.1.2 原始碼(`Moonrise-optimisation-patches.patch`,`EntityLookup`):
+
+```java
+// 任何 ThrownEnderpearl 加入世界時
+if (entity instanceof ThrownEnderpearl enderpearl) {
+    this.addEnderPearl(CoordinateUtils.getChunkKey(enderpearl.chunkPosition()));
+}
+// 跨 chunk 時票跟著搬
+if (entity instanceof ThrownEnderpearl && (oldSectionX != newSectionX || oldSectionZ != newSectionZ)) {
+    this.removeEnderPearl(oldChunk);
+    this.addEnderPearl(newChunk);
+}
+
+private void addEnderPearl(final long coordinate) {
+    if (!this.keepEnderPearlsTicking) return;
+    ...addTicketAtLevel(ENDER_PEARL_TICKER, coordinate, ChunkHolderManager.ENTITY_TICKING_TICKET_LEVEL, null);
+}
+```
+
+而 `keepEnderPearlsTicking` 來自(`PaperHooks`):
+
+```java
+public boolean addTicketForEnderPearls(final ServerLevel world) {
+    return !world.paperConfig().misc.legacyEnderPearlBehavior;
+}
+```
+
+另外 vanilla 端還有一條:`ServerPlayer.placeEnderPearlTicket()` 會下
+`TicketType.ENDER_PEARL`(半徑 2、40 tick timeout),同樣被這個設定關掉。
+
+### 這代表什麼
+
+| `legacy-ender-pearl-behavior` | 珍珠自帶 ticket | 弱加載蓄能 | 本外掛 |
+|---|---|---|---|
+| `false`(**預設**) | ✅ 跟著珍珠走 | ❌ **不可能** —— 珍珠的 chunk 永遠 entity-ticking,它會立刻 tick 並飛走 | 只剩前置載入的價值(vanilla 的票是**事後**才補上,珍珠得等 chunk 生成) |
+| `true` | ❌ | ✅ 1.17 行為 | **必要** —— 沒有它珍珠飛出去就停住 |
+
+**靠弱加載蓄能的珍珠炮,必須在 `paper-world-defaults.yml` 設:**
+
+```yaml
+misc:
+  legacy-ender-pearl-behavior: true
+```
+
+外掛啟動時會反射讀這個設定並在 console 說明目前是哪一邊,`/pearltrack status` 也有一行
+`pearl chunk tickets`。讀不到就顯示 unknown,不會因此失敗。
 
 ## 珍珠炮:蓄能期間絕對不能碰
 
