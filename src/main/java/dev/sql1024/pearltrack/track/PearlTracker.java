@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -45,6 +46,8 @@ public final class PearlTracker implements Runnable {
     private final NamespacedKey launchTickKey;
 
     private final Map<UUID, TrackedPearl> tracked = new LinkedHashMap<>();
+    /** Pearls that were too slow at launch and are being re-measured for a few ticks. */
+    private final Map<UUID, Candidate> candidates = new LinkedHashMap<>();
     /** Players who ran {@code /pearltrack next} and have not thrown a pearl yet. */
     private final Set<UUID> pendingManual = new HashSet<>();
 
@@ -59,6 +62,10 @@ public final class PearlTracker implements Runnable {
         this.config = config;
         this.trackedKey = new NamespacedKey(plugin, "tracked");
         this.launchTickKey = new NamespacedKey(plugin, "launch_tick");
+    }
+
+    /** A pearl whose speed may still be raised after {@code ProjectileLaunchEvent} has fired. */
+    private record Candidate(UUID world, String shooter, long expiresAtTick) {
     }
 
     public void setConfig(TrackConfig config) {
@@ -95,6 +102,46 @@ public final class PearlTracker implements Runnable {
 
     public boolean hasManualRequest(UUID player) {
         return pendingManual.contains(player);
+    }
+
+    /**
+     * Re-measures a pearl that was below the speed gate when it was launched.
+     *
+     * <p>A command block or another plugin can write {@code Motion} after the
+     * launch event, so the velocity seen there is not the velocity the pearl
+     * flies at. The scheduler runs before entities move, so on the following
+     * ticks the pearl is still sitting at its origin with its real motion
+     * already set — early enough to pick it up and pin its landing chunk.
+     */
+    public void watchForLateSpeed(Entity pearl, String shooter) {
+        if (config.lateSpeedCheckTicks() <= 0 || tracked.containsKey(pearl.getUniqueId())) {
+            return;
+        }
+        candidates.put(pearl.getUniqueId(), new Candidate(pearl.getWorld().getUID(), shooter,
+                serverTick + config.lateSpeedCheckTicks()));
+    }
+
+    private void processCandidates() {
+        Iterator<Map.Entry<UUID, Candidate>> it = candidates.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, Candidate> next = it.next();
+            Candidate candidate = next.getValue();
+            World world = Bukkit.getWorld(candidate.world());
+            Entity entity = world == null ? null : world.getEntity(next.getKey());
+            if (entity == null || !entity.isValid()) {
+                it.remove();
+                continue;
+            }
+            Vector velocity = entity.getVelocity();
+            if (Math.hypot(velocity.getX(), velocity.getZ()) >= config.onlyIfSpeedAbove()) {
+                it.remove();
+                if (!isFull()) {
+                    beginTracking(entity, candidate.shooter());
+                }
+            } else if (serverTick >= candidate.expiresAtTick()) {
+                it.remove();
+            }
+        }
     }
 
     // ------------------------------------------------------------------ start
@@ -134,6 +181,9 @@ public final class PearlTracker implements Runnable {
     @Override
     public void run() {
         serverTick++;
+        if (!candidates.isEmpty()) {
+            processCandidates();
+        }
         if (tracked.isEmpty()) {
             return;
         }

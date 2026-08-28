@@ -18,6 +18,7 @@ public record TrackConfig(
 
         boolean autoTrackAll,
         double onlyIfSpeedAbove,
+        int lateSpeedCheckTicks,
         int maxConcurrent,
         int maxTicks,
         int lookaheadTicks,
@@ -47,6 +48,7 @@ public record TrackConfig(
 
         boolean autoTrackAll = cfg.getBoolean("tracking.auto-track-all-pearls", true);
         double speedGate = Math.max(0.0D, cfg.getDouble("tracking.only-if-speed-above", 4.0D));
+        int lateCheck = Math.max(0, cfg.getInt("tracking.late-speed-check-ticks", 3));
         int maxConcurrent = Math.max(1, cfg.getInt("tracking.max-concurrent", 4));
         int maxTicks = Math.max(1, cfg.getInt("tracking.max-ticks", 6000));
         int lookahead = Math.max(1, cfg.getInt("tracking.lookahead-ticks", 5));
@@ -69,7 +71,7 @@ public record TrackConfig(
         int flush = Math.max(1, cfg.getInt("logging.flush-interval-ticks", 20));
 
         return new TrackConfig(drag, gravity, order,
-                autoTrackAll, speedGate, maxConcurrent, maxTicks, lookahead, radius,
+                autoTrackAll, speedGate, lateCheck, maxConcurrent, maxTicks, lookahead, radius,
                 convergence, keepTicks, keepRadius, noCollision, coordLimit,
                 mode, maxForced, warnThrottle, urgent,
                 logEnabled, toConsole, dir == null ? "flights" : dir, logPredicted, flush);

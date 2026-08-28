@@ -26,6 +26,14 @@ tracking:
   # ignored. A normal thrown pearl is around 1.5 b/t.
   only-if-speed-above: 4.0
 
+  # A command block or another plugin can write Motion *after*
+  # ProjectileLaunchEvent fires, so the speed measured at launch is not the speed
+  # the pearl actually flies at. For this many ticks after launch, a pearl that
+  # missed the gate is measured again and picked up if it has sped up. The
+  # scheduler runs before entities move, so the pearl is still at its origin and
+  # its landing chunk can still be pinned in time. 0 disables this.
+  late-speed-check-ticks: 3
+
   # Most pearls tracked at once. Each one costs its own chunk budget.
   max-concurrent: 4
 

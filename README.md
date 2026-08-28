@@ -108,6 +108,19 @@ tick,event,x,y,z,vx,vy,vz,hSpeed,chunkX,chunkZ,drift,pinnedChunks,travelled,note
 
 `PearlPhysics` 完全不碰 Bukkit 型別，所以 `./gradlew test` 不需要伺服器就能跑完彈道模型的驗證。
 
+## 指令方塊 / 外掛設定的 Motion
+
+如果你是用指令方塊或其他外掛在 `ProjectileLaunchEvent` **之後**才把 `Motion` 灌進珍珠,
+那麼事件當下量到的速度還是普通的 ~1.5 b/t,會被 `only-if-speed-above` 濾掉。
+
+`tracking.late-speed-check-ticks`(預設 3)處理這件事:沒過門檻的珍珠會被放進觀察名單,
+接下來幾個 tick 再量一次速度,超標就接手。因為 scheduler 跑在實體移動之前,
+珍珠在下一 tick 開頭還停在原地、Motion 已經是新的,還來得及釘落點 chunk。
+
+判斷 Motion 是不是外部寫進去的:比對 `Rotation` 與 `Motion`。Rotation 是實體移動時
+從 Motion 推算的,若 `Rotation` 的 pitch 跟 `atan2(-vy, hypot(vx,vz))` 對不上,
+就代表這個 Motion 還沒被實體套用過。
+
 ## 限制
 
 - **僅支援 vanilla Paper，不支援 Folia。** 超高速實體會不斷跨越 region，需要另一套

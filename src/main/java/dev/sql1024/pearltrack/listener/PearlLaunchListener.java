@@ -46,7 +46,13 @@ public final class PearlLaunchListener implements Listener {
         Vector velocity = pearl.getVelocity();
         double hSpeed = Math.hypot(velocity.getX(), velocity.getZ());
 
+        String name = shooter != null ? shooter.getName() : describe(source);
+
         if (!manual && (!cfg.autoTrackAll() || hSpeed < cfg.onlyIfSpeedAbove())) {
+            if (cfg.autoTrackAll()) {
+                // Its motion may still be overwritten later this tick.
+                tracker.watchForLateSpeed(pearl, name);
+            }
             return;
         }
         if (tracker.isFull()) {
@@ -61,7 +67,6 @@ public final class PearlLaunchListener implements Listener {
             tracker.consumeManualRequest(shooter.getUniqueId());
         }
 
-        String name = shooter != null ? shooter.getName() : describe(source);
         TrackedPearl tracked = tracker.beginTracking(pearl, name);
 
         if (shooter != null) {
