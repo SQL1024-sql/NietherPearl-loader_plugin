@@ -6,6 +6,7 @@ public enum EndReason {
     CONVERGED_DONE,
     TIMEOUT,
     HOLD_TIMEOUT,
+    LOST_CONTACT,
     OUT_OF_BOUNDS,
     WORLD_UNLOADED,
     STOPPED_BY_COMMAND,

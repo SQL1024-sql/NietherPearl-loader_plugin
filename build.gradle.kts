@@ -12,6 +12,9 @@ repositories {
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:${property("paperApiVersion")}")
+    // The simulation tests run the real tracker against proxied Bukkit interfaces,
+    // so the API has to be on the test runtime classpath as well.
+    testImplementation("io.papermc.paper:paper-api:${property("paperApiVersion")}")
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

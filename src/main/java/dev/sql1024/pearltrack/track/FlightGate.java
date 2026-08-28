@@ -30,6 +30,7 @@ public final class FlightGate {
     }
 
     /**
+     * @param holding          the pearl has not been declared under way yet
      * @param observed         the entity was reachable this tick
      * @param ticking          {@code getTicksLived()} changed since the previous observation
      * @param moved            its position changed since the previous observation
@@ -38,14 +39,18 @@ public final class FlightGate {
      * @param notTickingStreak consecutive observations with no tick, including this one
      * @param graceTicks       {@code tracking.hold-release-grace-ticks}
      */
-    public static Decision decide(boolean observed, boolean ticking, boolean moved,
+    public static Decision decide(boolean holding, boolean observed, boolean ticking, boolean moved,
                                   double hSpeed, double speedGate,
                                   int notTickingStreak, int graceTicks) {
-        boolean fast = hSpeed >= speedGate;
+        // The speed gate decides whether a pearl is worth picking up, not whether
+        // to keep carrying one. Dropping a pearl mid-flight because drag brought
+        // it under the threshold releases its chunks while it is deep in unloaded
+        // terrain, which strands it for good. Convergence is what ends a flight.
+        boolean interesting = !holding || hSpeed >= speedGate;
 
         if (!observed) {
             // Out of the loaded area, which it can only reach by moving.
-            return fast ? Decision.FLYING : Decision.HOLD_RELEASE;
+            return interesting ? Decision.FLYING : Decision.HOLD_RELEASE;
         }
         if (!ticking) {
             // Loaded but not ticking: a launcher charging up, or a chunk of ours
@@ -57,6 +62,6 @@ public final class FlightGate {
             // holding it in place. Whatever that is, stay out of its way.
             return Decision.HOLD_RELEASE;
         }
-        return fast ? Decision.FLYING : Decision.HOLD_RELEASE;
+        return interesting ? Decision.FLYING : Decision.HOLD_RELEASE;
     }
 }

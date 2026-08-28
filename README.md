@@ -159,6 +159,23 @@ tick,event,x,y,z,vx,vy,vz,hSpeed,chunkX,chunkZ,drift,pinnedChunks,travelled,note
 如果 drift 持續往同一方向累積，就調 `physics.drag` / `physics.gravity`，或把 `physics.order`
 從 `VANILLA` 換成 `GRAVITY_FIRST`（兩者水平完全相同，只差垂直終端速度 −3.00 vs −2.97 b/t）。
 
+## 模擬測試
+
+`src/test/.../sim/SimulatedServer.java` 用 `java.lang.reflect.Proxy` 代理 Bukkit 的
+`World` / `Server` / `Entity` / `Plugin` 介面,讓**真正的** `PearlTracker`、
+`ChunkTicketManager`、`FlightGate` 對著一個假世界跑。假世界重現的是整個設計依賴的那條規則:
+
+> 實體只有在它所在的 chunk 被釘住**且**已載入時才會 tick。
+
+這不是 Paper 伺服器 —— 地形生成、碰撞、ticket level 傳播都是模型而非真實。但它會在真實伺服器
+會凍住珍珠的地方凍住珍珠,所以 tracker 的每一條路徑都被實際執行過。
+
+`loadDelayTicks` 模擬地形生成延遲,`alwaysLoaded` / `alwaysTicking` 分別模擬「弱加載」與
+「正常加載」的 chunk —— 珍珠炮的蓄能就是前者。
+
+跑 `./gradlew test`。基準測試 `withoutTheTrackerTheSecondHopIsTheLastOne` 驗證前提:
+沒有外掛時 1000 b/t 的珍珠飛一 tick 就永久凍住。
+
 ## 建置
 
 需要 **JDK 25**（Paper 26.1.2 的 class 檔是 Java 25，javac 25 才讀得動）。

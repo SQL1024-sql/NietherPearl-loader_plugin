@@ -257,7 +257,7 @@ public final class PearlTracker implements Runnable {
         }
 
         double hSpeed = observed ? observedMotion.horizontalLength() : pearl.horizontalSpeed();
-        FlightGate.Decision decision = FlightGate.decide(observed, ticking, moved, hSpeed,
+        FlightGate.Decision decision = FlightGate.decide(pearl.holding(), observed, ticking, moved, hSpeed,
                 config.onlyIfSpeedAbove(), pearl.notTickingStreak(), config.holdReleaseGraceTicks());
 
         if (decision != FlightGate.Decision.FLYING) {
@@ -292,6 +292,7 @@ public final class PearlTracker implements Runnable {
             boolean justLost = pearl.lastWasReal();
             pearl.setState(step(pearl.state()));
             pearl.markPredicted();
+            pearl.countBlindTick();
             pearl.addUnconfirmedChunk(
                     ChunkKeys.of(pearl.pos().chunkX(), pearl.pos().chunkZ()), config.recoveryChunks());
             if (justLost) {
@@ -306,6 +307,15 @@ public final class PearlTracker implements Runnable {
         }
         if (pearl.pos().isOutside(config.coordinateLimit())) {
             finish(pearl, EndReason.OUT_OF_BOUNDS, null);
+            return;
+        }
+        // When this works, the pearl is inside a chunk we pinned and is seen every
+        // tick. A long unbroken blind streak means it is not where the model says,
+        // and predicting on would just generate terrain for a pearl that is not
+        // coming back.
+        if (pearl.blindTicks() >= config.maxBlindTicks()) {
+            finish(pearl, EndReason.LOST_CONTACT,
+                    "no sight of it for " + pearl.blindTicks() + " ticks");
             return;
         }
 
@@ -329,6 +339,10 @@ public final class PearlTracker implements Runnable {
             // No more look-ahead: a plain radius that travels with the pearl, which
             // is all it needs now that it stays inside a chunk or two per tick.
             LinkedHashSet<Long> keep = new LinkedHashSet<>();
+            // Recovery chunks first here too: if the entity fell behind the model
+            // before it converged, the window is centred on the model and would
+            // otherwise release the chunk the pearl is actually stranded in.
+            keep.addAll(pearl.unconfirmedChunks());
             addChunks(keep, pearl.pos(), config.keepRadiusAfterConvergence());
             tickets.apply(world, pearl.uuid(), excludeHoldArea(pearl, keep), serverTick);
             pearl.setPredictedNext(step(pearl.state()).pos());

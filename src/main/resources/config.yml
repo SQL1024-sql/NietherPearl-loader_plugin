@@ -51,6 +51,13 @@ tracking:
   # How long to keep waiting on a held pearl before giving up. 24000 = 20 minutes.
   max-hold-ticks: 24000
 
+  # When this plugin is doing its job the pearl sits in a chunk it pinned and is
+  # observed every single tick; a CSV full of REAL rows is the healthy picture.
+  # An unbroken run of PREDICTED rows this long means the pearl is not where the
+  # model thinks and is not coming back, so tracking gives up rather than
+  # generating a chunk a tick for a phantom. 200 ticks = 10 seconds.
+  max-blind-ticks: 200
+
   # Log a line every N held ticks showing accumulated momentum. 0 = never.
   hold-log-interval-ticks: 20
 

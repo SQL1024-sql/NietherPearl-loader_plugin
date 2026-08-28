@@ -22,6 +22,7 @@ public record TrackConfig(
         int maxConcurrent,
         int maxTicks,
         int maxHoldTicks,
+        int maxBlindTicks,
         int holdLogIntervalTicks,
         int holdReleaseGraceTicks,
         double stationaryEpsilon,
@@ -58,6 +59,7 @@ public record TrackConfig(
         int maxConcurrent = Math.max(1, cfg.getInt("tracking.max-concurrent", 4));
         int maxTicks = Math.max(1, cfg.getInt("tracking.max-ticks", 6000));
         int maxHold = Math.max(1, cfg.getInt("tracking.max-hold-ticks", 24000));
+        int maxBlind = Math.max(1, cfg.getInt("tracking.max-blind-ticks", 200));
         int holdLog = Math.max(0, cfg.getInt("tracking.hold-log-interval-ticks", 20));
         int holdGrace = Math.max(0, cfg.getInt("tracking.hold-release-grace-ticks", 3));
         double stationaryEps = Math.max(0.0D, cfg.getDouble("tracking.stationary-epsilon", 1.0E-6D));
@@ -82,8 +84,14 @@ public record TrackConfig(
         boolean logPredicted = cfg.getBoolean("logging.log-predicted-ticks", true);
         int flush = Math.max(1, cfg.getInt("logging.flush-interval-ticks", 20));
 
+        if (convergence < speedGate) {
+            logger.warning("tracking.convergence-threshold (" + convergence + ") is below"
+                    + " tracking.only-if-speed-above (" + speedGate + "); a pearl would slow past"
+                    + " the pick-up threshold before it converges.");
+        }
+
         return new TrackConfig(drag, gravity, order,
-                autoTrackAll, speedGate, lateCheck, maxConcurrent, maxTicks, maxHold, holdLog, holdGrace, stationaryEps, lookahead, radius,
+                autoTrackAll, speedGate, lateCheck, maxConcurrent, maxTicks, maxHold, maxBlind, holdLog, holdGrace, stationaryEps, lookahead, radius,
                 convergence, keepTicks, keepRadius, noCollision, coordLimit,
                 mode, maxForced, recovery, holdExclusion, warnThrottle, urgent,
                 logEnabled, toConsole, dir == null ? "flights" : dir, logPredicted, flush);

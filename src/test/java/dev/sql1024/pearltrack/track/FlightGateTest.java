@@ -11,9 +11,26 @@ class FlightGateTest {
     private static final double GATE = 4.0D;
     private static final int GRACE = 3;
 
+    /** Held, i.e. not yet declared under way — where the speed gate applies. */
     private static Decision decide(boolean observed, boolean ticking, boolean moved,
                                    double hSpeed, int notTickingStreak) {
-        return FlightGate.decide(observed, ticking, moved, hSpeed, GATE, notTickingStreak, GRACE);
+        return FlightGate.decide(true, observed, ticking, moved, hSpeed, GATE, notTickingStreak, GRACE);
+    }
+
+    /** Already under way, where the speed gate no longer applies. */
+    private static Decision inFlight(boolean observed, boolean ticking, boolean moved, double hSpeed) {
+        return FlightGate.decide(false, observed, ticking, moved, hSpeed, GATE, 0, GRACE);
+    }
+
+    /**
+     * Drag eventually brings every pearl under the pick-up threshold. Dropping it
+     * then would release its chunks while it is deep in unloaded terrain, and it
+     * would never be seen again — convergence is what ends a flight, not speed.
+     */
+    @Test
+    void aPearlAlreadyUnderWayIsNotDroppedWhenItSlowsBelowTheGate() {
+        assertEquals(Decision.FLYING, inFlight(true, true, true, 3.98D));
+        assertEquals(Decision.FLYING, inFlight(false, false, false, 0.5D));
     }
 
     /**
@@ -70,6 +87,6 @@ class FlightGateTest {
     @Test
     void aZeroGraceConfigReleasesImmediately() {
         assertEquals(Decision.HOLD_RELEASE,
-                FlightGate.decide(true, false, false, 1500.0D, GATE, 1, 0));
+                FlightGate.decide(true, true, false, false, 1500.0D, GATE, 1, 0));
     }
 }

@@ -21,12 +21,14 @@ public final class TrackedPearl {
 
     private Step state;
     private Vec3d predictedNext;
+    private boolean hasPrediction;
     private int tick;
 
     private int lastRealTick = -1;
     private Vec3d lastRealPos;
     private boolean lastWasReal;
     private int corrections;
+    private int blindTicks;
     private double lastDrift;
     private double maxDrift;
     private double totalDrift;
@@ -123,6 +125,7 @@ public final class TrackedPearl {
 
     public void setPredictedNext(Vec3d predictedNext) {
         this.predictedNext = predictedNext;
+        this.hasPrediction = true;
     }
 
     public int tick() {
@@ -138,12 +141,16 @@ public final class TrackedPearl {
      * records how far the prediction had drifted.
      */
     public double applyCorrection(Vec3d realPos, Vec3d realMotion) {
-        double drift = state.pos().distanceTo(realPos);
+        // Against last tick's prediction for *this* tick, not against where the
+        // pearl was last seen — otherwise this just measures how far it travelled
+        // and says nothing about whether the coefficients are right.
+        double drift = hasPrediction ? predictedNext.distanceTo(realPos) : 0.0D;
         this.state = new Step(realPos, realMotion);
         this.lastRealPos = realPos;
         this.lastRealTick = tick;
         this.lastWasReal = true;
         this.corrections++;
+        this.blindTicks = 0;
         this.lastDrift = drift;
         this.unconfirmedChunks.clear();
         this.totalDrift += drift;
@@ -171,6 +178,15 @@ public final class TrackedPearl {
 
     public int corrections() {
         return corrections;
+    }
+
+    /** Consecutive ticks with no sight of the entity. Zero or one in normal operation. */
+    public int blindTicks() {
+        return blindTicks;
+    }
+
+    public void countBlindTick() {
+        blindTicks++;
     }
 
     public double lastDrift() {
@@ -280,11 +296,13 @@ public final class TrackedPearl {
         this.previousHoldSpeed = speed;
         this.hasHoldChunk = true;
         this.holdChunk = chunk;
+        this.hasPrediction = false;
         this.unconfirmedChunks.clear();
     }
 
     /** Records a held tick where the pearl could not be seen at all. */
     public void observeBlindHold() {
+        this.hasPrediction = false;
         this.holding = true;
         this.holdTicks++;
         this.holdSpeedGain = 0.0D;
