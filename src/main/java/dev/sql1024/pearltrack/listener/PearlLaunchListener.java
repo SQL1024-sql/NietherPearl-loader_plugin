@@ -49,6 +49,7 @@ public final class PearlLaunchListener implements Listener {
         String name = shooter != null ? shooter.getName() : describe(source);
 
         if (!manual && (!cfg.autoTrackAll() || hSpeed < cfg.onlyIfSpeedAbove())) {
+            tracker.notePearlLaunch(hSpeed, false);
             if (cfg.autoTrackAll()) {
                 // Its motion may still be overwritten later this tick.
                 tracker.watchForLateSpeed(pearl, name);
@@ -56,6 +57,7 @@ public final class PearlLaunchListener implements Listener {
             return;
         }
         if (tracker.isFull()) {
+            tracker.notePearlLaunch(hSpeed, false);
             if (shooter != null) {
                 shooter.sendMessage(Component.text(
                         "[PearlTrack] Already tracking " + cfg.maxConcurrent() + " pearls; this one is not tracked.",
@@ -67,6 +69,7 @@ public final class PearlLaunchListener implements Listener {
             tracker.consumeManualRequest(shooter.getUniqueId());
         }
 
+        tracker.notePearlLaunch(hSpeed, true);
         TrackedPearl tracked = tracker.beginTracking(pearl, name);
 
         if (shooter != null) {

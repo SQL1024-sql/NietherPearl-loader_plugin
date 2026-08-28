@@ -209,6 +209,35 @@ chunk(± `chunks.hold-exclusion-radius`)從任何釘選集合裡剔除。
 
 別名 `/pt`，權限 `pearltrack.use`（預設 op）。`id` 可以只打 UUID 前 8 碼。
 
+## `/pearltrack list` 是空的?
+
+**手丟的珍珠不會被自動追蹤,這是刻意的。** vanilla 手丟珍珠的初速是 1.5 b/t
+(`shootFromRotation(..., 1.5F, 1.0F)`,再乘 cos(pitch)),遠低於
+`tracking.only-if-speed-above: 4.0`。門檻的用意是不要讓一般玩家的珍珠塞爆
+`max-concurrent` 的名額,害你真正要追的那顆進不來。
+
+就算用 `/pearltrack next` 強制追,普通珍珠也只會停在 HOLD 狀態(閘門的
+`interesting = !holding || fast` 不成立),落地觸發 `ProjectileHitEvent` 就移除 ——
+前後不到兩秒,通常來不及打 `list`。
+
+空的 `list` 現在會直接告訴你是哪一種情況:
+
+```
+[PearlTrack] Nothing is being tracked.
+Seen 3 pearl(s), skipped 3. Last one skipped was 1.42 b/t, 37 ticks ago;
+tracking.only-if-speed-above is 4.0.
+A pearl thrown by hand leaves at about 1.5 b/t, so it is below that on purpose ...
+```
+
+如果顯示的是 `No ender pearl launch has reached this plugin at all`,那才是真的有問題 ——
+代表 `ProjectileLaunchEvent` 根本沒送到,要查外掛有沒有載入、或有沒有別的外掛先取消事件。
+
+| 想做的事 | 指令 |
+|---|---|
+| 追我接下來丟的那顆(無視速度) | `/pearltrack next` |
+| 珍珠已經在炮裡蓄能 | `/pearltrack adopt` |
+| 讓一般珍珠也進 list | `only-if-speed-above: 0.1`,並調大 `max-concurrent` |
+
 ## 飛行記錄
 
 `plugins/PearlTrack/flights/<時間>_<uuid8>.csv`：

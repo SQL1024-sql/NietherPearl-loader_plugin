@@ -139,7 +139,7 @@ public final class PearlTrackCommand implements BasicCommand {
     private void list(CommandSender sender) {
         Collection<TrackedPearl> all = tracker.tracked();
         if (all.isEmpty()) {
-            sender.sendMessage(Component.text("[PearlTrack] Nothing is being tracked.", LABEL));
+            explainEmpty(sender);
             return;
         }
         sender.sendMessage(Component.text("[PearlTrack] " + all.size() + " tracked, "
@@ -152,6 +152,36 @@ public final class PearlTrackCommand implements BasicCommand {
                     pearl.holding() ? "held " + pearl.holdTicks() + "t"
                             : pearl.converged() ? "converged" : "in flight"), VALUE));
         }
+    }
+
+    /**
+     * An empty list has three quite different causes and they look identical from
+     * the outside, so say which one this is.
+     */
+    private void explainEmpty(CommandSender sender) {
+        TrackConfig cfg = config.get();
+        sender.sendMessage(Component.text("[PearlTrack] Nothing is being tracked.", LABEL));
+
+        if (tracker.pearlsSeen() == 0) {
+            sender.sendMessage(Component.text(
+                    "No ender pearl launch has reached this plugin at all. Either none has been thrown"
+                            + " since the last restart, or something is cancelling ProjectileLaunchEvent first.",
+                    NamedTextColor.YELLOW));
+        } else {
+            sender.sendMessage(Component.text(String.format(Locale.ROOT,
+                    "Seen %d pearl(s), skipped %d. Last one skipped was %.2f b/t, %d ticks ago;"
+                            + " tracking.only-if-speed-above is %.1f.",
+                    tracker.pearlsSeen(), tracker.pearlsSkipped(), tracker.lastSkippedSpeed(),
+                    tracker.ticksSinceLastPearl(), cfg.onlyIfSpeedAbove()), NamedTextColor.YELLOW));
+            sender.sendMessage(Component.text(
+                    "A pearl thrown by hand leaves at about 1.5 b/t, so it is below that on purpose —"
+                            + " the threshold keeps ordinary pearls from filling the "
+                            + cfg.maxConcurrent() + " tracking slots.", LABEL));
+        }
+        sender.sendMessage(Component.text("/pearltrack next", ACCENT)
+                .append(Component.text("   track your next throw whatever its speed", LABEL)));
+        sender.sendMessage(Component.text("/pearltrack adopt", ACCENT)
+                .append(Component.text("  pick up a pearl already in the world, e.g. one sitting in a launcher", LABEL)));
     }
 
     private void stop(CommandSender sender, String id) {
@@ -184,7 +214,7 @@ public final class PearlTrackCommand implements BasicCommand {
         } else {
             Collection<TrackedPearl> all = tracker.tracked();
             if (all.isEmpty()) {
-                sender.sendMessage(Component.text("[PearlTrack] Nothing is being tracked.", LABEL));
+                explainEmpty(sender);
                 return;
             }
             if (all.size() > 1) {

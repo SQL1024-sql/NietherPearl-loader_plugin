@@ -59,6 +59,13 @@ public final class PearlTracker implements Runnable {
     private TrackConfig config;
     private long serverTick;
 
+    // Why is nothing tracked? These separate "the plugin never saw a pearl" from
+    // "it saw one and the speed gate skipped it", which look identical otherwise.
+    private int pearlsSeen;
+    private int pearlsSkipped;
+    private double lastSkippedSpeed;
+    private long lastSeenAtTick = -1;
+
     public PearlTracker(Plugin plugin, ChunkTicketManager tickets, FlightLogger flightLogger,
                         TrackConfig config) {
         this.plugin = plugin;
@@ -95,6 +102,33 @@ public final class PearlTracker implements Runnable {
 
     public boolean isFull() {
         return tracked.size() >= config.maxConcurrent();
+    }
+
+    /** Called for every ender pearl launch that reaches the listener. */
+    public void notePearlLaunch(double hSpeed, boolean pickedUp) {
+        pearlsSeen++;
+        lastSeenAtTick = serverTick;
+        if (!pickedUp) {
+            pearlsSkipped++;
+            lastSkippedSpeed = hSpeed;
+        }
+    }
+
+    public int pearlsSeen() {
+        return pearlsSeen;
+    }
+
+    public int pearlsSkipped() {
+        return pearlsSkipped;
+    }
+
+    public double lastSkippedSpeed() {
+        return lastSkippedSpeed;
+    }
+
+    /** Ticks since the last launch reached the plugin, or -1 if none ever has. */
+    public long ticksSinceLastPearl() {
+        return lastSeenAtTick < 0 ? -1 : serverTick - lastSeenAtTick;
     }
 
     public void requestManualTrack(UUID player) {
