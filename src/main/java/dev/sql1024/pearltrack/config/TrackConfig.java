@@ -23,6 +23,8 @@ public record TrackConfig(
         int maxTicks,
         int maxHoldTicks,
         int holdLogIntervalTicks,
+        int holdReleaseGraceTicks,
+        double stationaryEpsilon,
         int lookaheadTicks,
         int forceloadRadius,
         double convergenceThreshold,
@@ -57,6 +59,8 @@ public record TrackConfig(
         int maxTicks = Math.max(1, cfg.getInt("tracking.max-ticks", 6000));
         int maxHold = Math.max(1, cfg.getInt("tracking.max-hold-ticks", 24000));
         int holdLog = Math.max(0, cfg.getInt("tracking.hold-log-interval-ticks", 20));
+        int holdGrace = Math.max(0, cfg.getInt("tracking.hold-release-grace-ticks", 3));
+        double stationaryEps = Math.max(0.0D, cfg.getDouble("tracking.stationary-epsilon", 1.0E-6D));
         int lookahead = Math.max(1, cfg.getInt("tracking.lookahead-ticks", 5));
         int radius = Math.max(0, cfg.getInt("tracking.forceload-radius", 0));
         double convergence = Math.max(0.0D, cfg.getDouble("tracking.convergence-threshold", 16.0D));
@@ -79,7 +83,7 @@ public record TrackConfig(
         int flush = Math.max(1, cfg.getInt("logging.flush-interval-ticks", 20));
 
         return new TrackConfig(drag, gravity, order,
-                autoTrackAll, speedGate, lateCheck, maxConcurrent, maxTicks, maxHold, holdLog, lookahead, radius,
+                autoTrackAll, speedGate, lateCheck, maxConcurrent, maxTicks, maxHold, holdLog, holdGrace, stationaryEps, lookahead, radius,
                 convergence, keepTicks, keepRadius, noCollision, coordLimit,
                 mode, maxForced, recovery, holdExclusion, warnThrottle, urgent,
                 logEnabled, toConsole, dir == null ? "flights" : dir, logPredicted, flush);

@@ -51,6 +51,9 @@ public final class TrackedPearl {
      * reliable read on whether its chunk is entity-ticking.
      */
     private int lastTicksLived = -1;
+    /** Position at the previous observation, for telling a moving pearl from a pinned-in-place one. */
+    private Vec3d lastSeenPos;
+    private int notTickingStreak;
     private boolean holding = true;
     private int holdTicks;
     private double previousHoldSpeed;
@@ -71,6 +74,7 @@ public final class TrackedPearl {
         this.state = new Step(pos, motion);
         this.predictedNext = pos;
         this.lastRealPos = pos;
+        this.lastSeenPos = pos;
     }
 
     public UUID uuid() {
@@ -208,6 +212,28 @@ public final class TrackedPearl {
         if (unconfirmedChunks.size() < cap) {
             unconfirmedChunks.add(key);
         }
+    }
+
+    public Vec3d lastSeenPos() {
+        return lastSeenPos;
+    }
+
+    public void setLastSeenPos(Vec3d lastSeenPos) {
+        this.lastSeenPos = lastSeenPos;
+    }
+
+    public int notTickingStreak() {
+        return notTickingStreak;
+    }
+
+    public void setNotTickingStreak(int notTickingStreak) {
+        this.notTickingStreak = notTickingStreak;
+    }
+
+    /** Refreshes from reality without declaring a hold, used during the grace window. */
+    public void observeTransitional(Vec3d pos, Vec3d motion) {
+        this.state = new Step(pos, motion);
+        this.lastRealPos = pos;
     }
 
     public int lastTicksLived() {

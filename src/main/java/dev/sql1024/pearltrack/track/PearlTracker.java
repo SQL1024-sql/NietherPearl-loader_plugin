@@ -236,25 +236,33 @@ public final class PearlTracker implements Runnable {
         boolean observed = entity != null && entity.isValid();
 
         boolean ticking = false;
+        boolean moved = true;
         Vec3d observedPos = null;
         Vec3d observedMotion = null;
         if (observed) {
             int ticksLived = entity.getTicksLived();
             ticking = pearl.lastTicksLived() >= 0 && ticksLived != pearl.lastTicksLived();
             pearl.setLastTicksLived(ticksLived);
+            pearl.setNotTickingStreak(ticking ? 0 : pearl.notTickingStreak() + 1);
+
             Location loc = entity.getLocation();
             Vector vel = entity.getVelocity();
             observedPos = new Vec3d(loc.getX(), loc.getY(), loc.getZ());
             observedMotion = new Vec3d(vel.getX(), vel.getY(), vel.getZ());
+            moved = pearl.lastSeenPos() == null
+                    || observedPos.distanceTo(pearl.lastSeenPos()) > config.stationaryEpsilon();
+            pearl.setLastSeenPos(observedPos);
+        } else {
+            pearl.setNotTickingStreak(0);
         }
 
-        // A pearl is under way only when it is moving fast AND actually ticking
-        // (or has already left the loaded area, which it can only do by moving).
         double hSpeed = observed ? observedMotion.horizontalLength() : pearl.horizontalSpeed();
-        boolean underWay = hSpeed >= config.onlyIfSpeedAbove() && (!observed || ticking);
+        FlightGate.Decision decision = FlightGate.decide(observed, ticking, moved, hSpeed,
+                config.onlyIfSpeedAbove(), pearl.notTickingStreak(), config.holdReleaseGraceTicks());
 
-        if (!underWay) {
-            hold(pearl, observed, observedPos, observedMotion, hSpeed);
+        if (decision != FlightGate.Decision.FLYING) {
+            hold(pearl, observed, observedPos, observedMotion, hSpeed,
+                    decision == FlightGate.Decision.HOLD_RELEASE);
             return;
         }
         if (pearl.holding()) {
@@ -339,11 +347,24 @@ public final class PearlTracker implements Runnable {
     }
 
     /**
-     * The pearl is not under way: either still too slow to need help, or loaded
-     * but not ticking. Every pin is dropped, because raising its chunk to
-     * entity-ticking is exactly what would set it off.
+     * The pearl is not under way. Pins are dropped, because raising its chunk to
+     * entity-ticking is exactly what would set a charging launcher off — except
+     * during the grace window described by
+     * {@link FlightGate.Decision#HOLD_KEEP_PINS}.
      */
-    private void hold(TrackedPearl pearl, boolean observed, Vec3d pos, Vec3d motion, double hSpeed) {
+    private void hold(TrackedPearl pearl, boolean observed, Vec3d pos, Vec3d motion, double hSpeed,
+                      boolean releasePins) {
+        if (!releasePins) {
+            // Grace window: a chunk we pinned has loaded but is not entity-ticking
+            // yet. Keep the pins and do not record a hold chunk — excluding the
+            // chunk the pearl is stranded in is the one thing that would make this
+            // unrecoverable.
+            if (observed) {
+                pearl.observeTransitional(pos, motion);
+            }
+            return;
+        }
+
         tickets.releaseAll(pearl.uuid());
 
         if (observed) {

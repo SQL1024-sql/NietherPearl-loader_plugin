@@ -83,14 +83,23 @@ chunk 裡。CSV 應該幾乎全是 `REAL`。
 蓄能中的珍珠 `Motion` 已經是幾千 b/t,如果只用「速度夠快」當判準,外掛會在蓄能期間
 把炮的 chunk 釘住,珍珠帶著半吊子的動量提前發射,炮就廢了。
 
-所以「正在飛行」的判準是**兩個條件同時成立**:
+判斷邏輯抽在 `FlightGate.decide()`(純函式,有單元測試),真值表:
 
-```java
-boolean underWay = hSpeed >= gate && (!observed || ticking);
-```
+| 看得到 | 有 tick | 有位移 | 夠快 | 結果 |
+|---|---|---|---|---|
+| ✅ | ❌ | — | — | HOLD(grace 內保留 ticket,之後釋放) |
+| ✅ | ✅ | ❌ | — | **HOLD 並立刻釋放** ← 被別的機制固定在原地 |
+| ✅ | ✅ | ✅ | ✅ | FLYING |
+| ✅ | ✅ | ✅ | ❌ | HOLD 並釋放 |
+| ❌ | — | — | ✅ | FLYING(預測模式) |
+| ❌ | — | — | ❌ | HOLD 並釋放 |
 
 `ticking` 來自 `Entity#getTicksLived()` 相鄰兩次觀測有沒有變化 —— 這是唯一可靠、
 不需要 chunk API 就能回答「這格 chunk 是不是 entity-ticking」的方法。
+
+「有位移」是第二道保險:**Motion 再大,只要 Pos 沒動就一律不釘**。少釘的代價只是
+珍珠晚一個 tick 出發(凍住的珍珠動量完全保留,彈道不變);釘錯的代價是炮直接報廢。
+兩邊不對稱,所以所有模稜兩可的情況一律倒向「不要碰」。
 
 只要珍珠處在 held 狀態,外掛會**主動釋放它的所有 ticket**,並把最後一次 held 的
 chunk(± `chunks.hold-exclusion-radius`)從任何釘選集合裡剔除。

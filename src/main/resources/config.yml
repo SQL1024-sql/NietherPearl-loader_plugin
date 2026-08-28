@@ -54,6 +54,19 @@ tracking:
   # Log a line every N held ticks showing accumulated momentum. 0 = never.
   hold-log-interval-ticks: 20
 
+  # How far a pearl must move between two observations to count as moving. A
+  # pearl that ticks while standing still is being held in place by something
+  # else, whatever its Motion says, and is left alone.
+  stationary-epsilon: 1.0E-6
+
+  # A chunk this plugin just pinned can finish loading a tick or two before it
+  # reaches entity-ticking. During that window the pearl reads as "not ticking",
+  # and releasing the pin then would strand the very pearl it was meant to
+  # revive. Pins are therefore kept for this many non-ticking observations
+  # before being dropped. This never delays anything for a launcher, which has
+  # no pins to release in the first place.
+  hold-release-grace-ticks: 3
+
   # How many ticks ahead to pin. A ticket does not load a chunk instantly —
   # ungenerated terrain can take several ticks — so this is the head start the
   # chunk system gets. Raising it costs one more pinned chunk per tick of depth.
