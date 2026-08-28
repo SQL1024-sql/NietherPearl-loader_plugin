@@ -1,0 +1,11 @@
+name: PearlTrack
+version: '${version}'
+main: dev.sql1024.pearltrack.PearlTrackPlugin
+api-version: '26.1.2'
+description: Predictive chunk loading so an ultra-fast ender pearl keeps ticking through unloaded terrain.
+authors:
+  - SQL1024-sql
+permissions:
+  pearltrack.use:
+    description: Use /pearltrack
+    default: op

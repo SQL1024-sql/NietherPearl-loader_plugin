@@ -1,0 +1,104 @@
+# PearlTrack — keeps a very fast ender pearl inside ticking chunks by predicting
+# where it lands next tick and pinning that chunk before the entity moves.
+
+physics:
+  # Air drag applied to every axis each tick. Vanilla ThrowableProjectile: 0.99.
+  # This single number decides the whole flight: total horizontal distance is
+  # speed / (1 - drag), so 0.99 means a pearl travels 100x its per-tick speed.
+  drag: 0.99
+
+  # Blocks/tick^2 subtracted from vertical motion. Vanilla ender pearl: 0.03.
+  gravity: 0.03
+
+  # VANILLA       - move by delta, scale by drag, then subtract gravity (what the
+  #                 server actually does; terminal fall speed -3.00 b/t)
+  # GRAVITY_FIRST - subtract gravity, then move, then scale by drag (-2.97 b/t)
+  # Horizontal motion is identical either way. Check the `drift` column in the
+  # flight CSV to see which one matches your server.
+  order: VANILLA
+
+tracking:
+  # Track every pearl thrown above `only-if-speed-above`. Turn this off to track
+  # only pearls explicitly requested with /pearltrack next.
+  auto-track-all-pearls: true
+
+  # Horizontal blocks/tick below which a pearl is just an ordinary pearl and is
+  # ignored. A normal thrown pearl is around 1.5 b/t.
+  only-if-speed-above: 4.0
+
+  # Most pearls tracked at once. Each one costs its own chunk budget.
+  max-concurrent: 4
+
+  # Hard stop, in ticks. 6000 = 5 minutes.
+  max-ticks: 6000
+
+  # How many ticks ahead to pin. A ticket does not load a chunk instantly —
+  # ungenerated terrain can take several ticks — so this is the head start the
+  # chunk system gets. Raising it costs one more pinned chunk per tick of depth.
+  lookahead-ticks: 5
+
+  # Extra chunks pinned around each predicted landing chunk. 0 = just that chunk
+  # (a pearl only needs the chunk it is in to keep ticking). 1 = a 3x3, which
+  # also gives it something to collide with on arrival.
+  forceload-radius: 0
+
+  # Horizontal blocks/tick below which a tick no longer skips over whole chunks.
+  # At this point predictive pinning stops and a plain moving window takes over.
+  convergence-threshold: 16.0
+
+  # How long that window follows the pearl after convergence before the plugin
+  # lets go entirely. Note a pearl converging at 16 b/t still has ~1600 blocks of
+  # travel left (16 / (1 - drag)), so do not set this too low if you want to see
+  # where it finally lands.
+  keep-ticks-after-convergence: 600
+
+  # Radius of that post-convergence window, in chunks. 2 = a 5x5 area.
+  keep-radius-after-convergence: 2
+
+  # Give the pearl `noPhysics` so it passes through blocks instead of landing.
+  # Without this a pearl fired at 1000 b/t hits terrain after roughly 1200 blocks
+  # of drop and never reaches the convergence point. Collisions are restored when
+  # it converges or when tracking stops.
+  disable-collision: false
+
+  # Stop tracking past this coordinate; beyond it chunk maths stops being valid.
+  coordinate-limit: 2.9999984E7
+
+chunks:
+  # PLUGIN_TICKET - World#addPluginChunkTicket. Never written to the region files
+  #                 and released automatically when the plugin disables.
+  # FORCE_LOADED  - World#setChunkForceLoaded. Persisted with the world, so a
+  #                 crash would leave chunks pinned; a journal cleans those up on
+  #                 the next start. Use this only if you want the vanilla
+  #                 /forceload list to show what the plugin is doing.
+  mode: PLUGIN_TICKET
+
+  # Our own ceiling on simultaneously pinned chunks, not a server limit: the 256
+  # people quote is the maximum area of one `/forceload add` command, and the
+  # Bukkit API has no cap of its own. With the defaults a pearl needs about 6.
+  # When the budget runs out the furthest-ahead predictions are dropped first.
+  max-forced-chunks: 256
+
+  # Minimum ticks between two "budget is full" warnings.
+  warn-throttle-ticks: 100
+
+  # Also request each newly pinned chunk urgently, so it jumps the load queue.
+  # Worth keeping on: a pearl outruns the normal queue easily.
+  urgent-load: true
+
+logging:
+  enabled: true
+
+  # Console gets launch, correction, convergence and stop events; predicted ticks
+  # are CSV-only so the console stays readable.
+  to-console: true
+
+  # Relative to plugins/PearlTrack/.
+  csv-directory: flights
+
+  # Log the ticks where the pearl was in unloaded terrain and the position came
+  # from the model. Off = only the ticks with real observations.
+  log-predicted-ticks: true
+
+  # How often the async writer flushes queued rows to disk.
+  flush-interval-ticks: 20
